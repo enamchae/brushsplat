@@ -33,20 +33,15 @@ const loadBrushTexture = async () => {
 };
 
 const curvePoints = [
-    {x: 30, y: 30, radius: 0},
-    {x: 120, y: 600, radius: 40},
-    {x: 600, y: 320, radius: 20},
+    {x: 50, y: 30, radius: 0},
+    {x: 120, y: 600, radius: 70},
+    {x: 600, y: 320, radius: 40},
     {x: 150, y: 20, radius: 0},
 ];
 
 let width = $state(800);
 let height = $state(800);
 </script>
-
-<img
-    src={brushSrc}
-    alt="brushstroke"
-/>
 
 <canvas
     bind:this={canvas}

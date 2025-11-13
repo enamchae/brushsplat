@@ -35,7 +35,7 @@ export class GpuBrushRunner {
         const uniformsManager = new GpuUniformsBufferManager({ device });
         uniformsManager.writeResolution(width, height);
 
-        const sampledPoints = sampleCatmullRom({curvePoints, nDivisions: 8});
+        const sampledPoints = sampleCatmullRom({curvePoints, nDivisions: 24});
         uniformsManager.writeCurvePointCount(sampledPoints.length);
 
         const brushTextureManager = new GpuBrushTextureManager({
