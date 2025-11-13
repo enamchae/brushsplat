@@ -2,6 +2,7 @@ import { GpuUniformsBufferManager } from "./buffers/GpuUniformsBufferManager";
 import { GpuMeshLineRenderPipelineManager } from "./pipelines/GpuMeshLineRenderPipelineManager";
 import { GpuMeshLineCoordsBufferManager } from "./buffers/GpuMeshLineCoordsBufferManager";
 import type { CurvePoint } from "./geometry/buildMeshLineBuffer";
+import { sampleCatmullRom } from "./geometry/sampleCatmullRom";
 
 export class GpuBrushRunner {
     private readonly device: GPUDevice;
@@ -26,7 +27,9 @@ export class GpuBrushRunner {
         const uniformsManager = new GpuUniformsBufferManager({ device });
         uniformsManager.writeResolution(800, 800);
 
-        const meshLineCoordsManager = new GpuMeshLineCoordsBufferManager({device, curvePoints});
+        const sampledPoints = sampleCatmullRom({curvePoints, nDivisons: 8});
+
+        const meshLineCoordsManager = new GpuMeshLineCoordsBufferManager({device, curvePoints: sampledPoints});
         const meshLineRenderPipelineManager = new GpuMeshLineRenderPipelineManager({device, format, uniformsManager, meshLineCoordsManager});
         
 
