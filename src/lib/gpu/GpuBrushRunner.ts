@@ -1,5 +1,7 @@
 import { GpuUniformsBufferManager } from "./buffers/GpuUniformsBufferManager";
 import { GpuMeshLineRenderPipelineManager } from "./pipelines/GpuMeshLineRenderPipelineManager";
+import { GpuMeshLineCoordsBufferManager } from "./buffers/GpuMeshLineCoordsBufferManager";
+import type { CurvePoint } from "./geometry/buildMeshLineBuffer";
 
 export class GpuBrushRunner {
     private readonly device: GPUDevice;
@@ -8,25 +10,32 @@ export class GpuBrushRunner {
     readonly uniformsManager: GpuUniformsBufferManager;
 
     private readonly meshLineRenderPipelineManager: GpuMeshLineRenderPipelineManager;
+    private meshLineBufferManager: GpuMeshLineCoordsBufferManager | null = null;
 
     constructor({
         device,
         format,
         context,
+        curvePoints,
     }: {
         device: GPUDevice,
         format: GPUTextureFormat,
         context: GPUCanvasContext,
+        curvePoints: CurvePoint[],
     }) {
         const uniformsManager = new GpuUniformsBufferManager({ device });
         uniformsManager.writeResolution(800, 800);
+
+        const meshLineCoordsManager = new GpuMeshLineCoordsBufferManager({device, curvePoints});
+        const meshLineRenderPipelineManager = new GpuMeshLineRenderPipelineManager({device, format, uniformsManager, meshLineCoordsManager});
         
 
         this.device = device;
         this.context = context;
 
-        this.meshLineRenderPipelineManager = new GpuMeshLineRenderPipelineManager({device, format, uniformsManager});
         this.uniformsManager = uniformsManager;
+        this.meshLineBufferManager = meshLineCoordsManager;
+        this.meshLineRenderPipelineManager = meshLineRenderPipelineManager;
     }
     
 

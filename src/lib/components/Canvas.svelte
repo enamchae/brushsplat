@@ -19,7 +19,7 @@ onMount(async () => {
     if (response === null) return;
     const {device, context, format} = response;
 
-    const runner = new GpuBrushRunner({device, format, context});
+    const runner = new GpuBrushRunner({device, format, context, curvePoints});
 });
 
 const curvePoints = [
