@@ -1,4 +1,4 @@
-import { GpuMeshLineRenderPipelineManager } from "./meshline/GpuMeshLineRenderPipelineManager";
+import { GpuMeshLineRenderPipelineManager } from "./pipelines/GpuMeshLineRenderPipelineManager";
 
 export class GpuBrushRunner {
     private readonly device: GPUDevice;

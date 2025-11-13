@@ -1,3 +1,9 @@
+struct Uniforms {
+    resolution: vec2f,
+}
+
+@group(0) @binding(0) var<uniform> uniforms: Uniforms;
+
 struct MeshLine {
     nPoints: u32,
     points: array<MeshLinePoint, 16>,

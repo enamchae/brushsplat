@@ -13,37 +13,37 @@ export class GpuMeshLineRenderPipelineManager {
         format: GPUTextureFormat,
     }) {
         const vertexModule = device.createShaderModule({
-            label: "points vertex module",
+            label: "mesh line vertex module",
             code: commonModuleSrc + brushVertexModuleSrc,
         });
         const fragmentModule = device.createShaderModule({
-            label: "points fragment module",
+            label: "mesh line fragment module",
             code: commonModuleSrc + brushFragmentModuleSrc,
         });
         
         const renderPipelineLayout = device.createPipelineLayout({
-            label: "points render pipeline",
+            label: "mesh line render pipeline",
             // bindGroupLayouts: [uniformsManager.bindGroupLayout],
             bindGroupLayouts: [],
         });
         this.renderPipeline = device.createRenderPipeline({
-            label: "points render pipeline",
+            label: "mesh line render pipeline",
 
             layout: renderPipelineLayout,
 
             vertex: {
                 module: vertexModule,
-                entryPoint: "vert",
+                entryPoint: "brushVertex",
                 buffers: [
                     {
                         attributes: [
                             {
                                 shaderLocation: 0,
                                 offset: 0,
-                                format: "float32x4",
+                                format: "float32x2",
                             },
                         ],
-                        arrayStride: 80,
+                        arrayStride: 8,
                         stepMode: "vertex",
                     },
                 ],
@@ -51,7 +51,7 @@ export class GpuMeshLineRenderPipelineManager {
 
             fragment: {
                 module: fragmentModule,
-                entryPoint: "frag",
+                entryPoint: "brushFragment",
                 targets: [
                     {
                         format,
@@ -60,7 +60,7 @@ export class GpuMeshLineRenderPipelineManager {
             },
 
             primitive: {
-                topology: "point-list",
+                topology: "triangle-list",
             },
         });
     }

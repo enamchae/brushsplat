@@ -18,6 +18,12 @@ onMount(async () => {
     if (response === null) return;
     const {device, context, format} = response;
 });
+
+const curvePoints = [
+    {x: 60, y: 60, radius: 5},
+    {x: 120, y: 500, radius: 10},
+    {x: 500, y: 120, radius: 7},
+];
 </script>
 
 <img
@@ -25,4 +31,8 @@ onMount(async () => {
     alt="brushstroke"
 />
 
-<canvas bind:this={canvas}></canvas>
+<canvas
+    bind:this={canvas}
+    width={800}
+    height={800}
+></canvas>
