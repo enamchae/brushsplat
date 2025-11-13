@@ -18,5 +18,5 @@ struct MeshLinePoint {
 struct VertexOut {
     @builtin(position) posBuiltin: vec4f,
     @location(0) pos: vec3f,
-    @lcoation(1) uv: vec2f,
+    @location(1) uv: vec2f,
 }

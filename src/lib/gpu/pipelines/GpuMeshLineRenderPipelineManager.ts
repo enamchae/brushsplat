@@ -1,6 +1,7 @@
 import commonModuleSrc from "$lib/gpu/shaders/_common.wgsl?raw";
 import brushVertexModuleSrc from "$lib/gpu/shaders/brushVertex.wgsl?raw";
 import brushFragmentModuleSrc from "$lib/gpu/shaders/brushFragment.wgsl?raw";
+import { GpuUniformsBufferManager } from "$lib/gpu/buffers/GpuUniformsBufferManager";
 
 export class GpuMeshLineRenderPipelineManager {
     readonly renderPipeline: GPURenderPipeline;
@@ -8,9 +9,11 @@ export class GpuMeshLineRenderPipelineManager {
     constructor({
         device,
         format,
+        uniformsManager,
     }: {
         device: GPUDevice,
         format: GPUTextureFormat,
+        uniformsManager: GpuUniformsBufferManager,
     }) {
         const vertexModule = device.createShaderModule({
             label: "mesh line vertex module",
@@ -23,8 +26,7 @@ export class GpuMeshLineRenderPipelineManager {
         
         const renderPipelineLayout = device.createPipelineLayout({
             label: "mesh line render pipeline",
-            // bindGroupLayouts: [uniformsManager.bindGroupLayout],
-            bindGroupLayouts: [],
+            bindGroupLayouts: [uniformsManager.bindGroupLayout],
         });
         this.renderPipeline = device.createRenderPipeline({
             label: "mesh line render pipeline",

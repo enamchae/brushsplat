@@ -1,8 +1,11 @@
+import { GpuUniformsBufferManager } from "./buffers/GpuUniformsBufferManager";
 import { GpuMeshLineRenderPipelineManager } from "./pipelines/GpuMeshLineRenderPipelineManager";
 
 export class GpuBrushRunner {
     private readonly device: GPUDevice;
     private readonly context: GPUCanvasContext;
+
+    readonly uniformsManager: GpuUniformsBufferManager;
 
     private readonly meshLineRenderPipelineManager: GpuMeshLineRenderPipelineManager;
 
@@ -15,11 +18,17 @@ export class GpuBrushRunner {
         format: GPUTextureFormat,
         context: GPUCanvasContext,
     }) {
+        const uniformsManager = new GpuUniformsBufferManager({ device });
+        uniformsManager.writeResolution(800, 800);
+        
+
         this.device = device;
         this.context = context;
 
-        this.meshLineRenderPipelineManager = new GpuMeshLineRenderPipelineManager({device, format});
+        this.meshLineRenderPipelineManager = new GpuMeshLineRenderPipelineManager({device, format, uniformsManager});
+        this.uniformsManager = uniformsManager;
     }
+    
 
     async render() {
         const commandEncoder = this.device.createCommandEncoder({

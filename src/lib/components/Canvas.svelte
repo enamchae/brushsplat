@@ -1,5 +1,6 @@
 <script lang="ts">
 import brushSrc from "$lib/assets/brush.png";
+    import { GpuBrushRunner } from "$lib/gpu/GpuBrushRunner";
 import { requestGpuDeviceAndContext } from "$lib/gpu/requestGpuDeviceAndContext";
 import { onMount } from "svelte";
 
@@ -17,6 +18,8 @@ onMount(async () => {
     const response = await requestGpuDeviceAndContext({onStatusChange, onErr, canvas});
     if (response === null) return;
     const {device, context, format} = response;
+
+    const runner = new GpuBrushRunner({device, format, context});
 });
 
 const curvePoints = [
