@@ -6,6 +6,7 @@ export class GpuMeshLineCoordsBufferManager {
 	readonly buffer: GPUBuffer;
 	readonly bindGroupLayout: GPUBindGroupLayout;
 	readonly bindGroup: GPUBindGroup;
+	readonly vertexCount: number;
 
 	constructor({
 		device,
@@ -15,6 +16,7 @@ export class GpuMeshLineCoordsBufferManager {
 		curvePoints: CurvePoint[];
 	}) {
 		const coords = buildMeshLineBuffer(curvePoints);
+		this.vertexCount = coords.length / 2; // 2 floats per vertex (x, y)
 
 		const coordsBuffer = device.createBuffer({
 			label: "mesh line coords buffer",

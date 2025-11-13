@@ -6,6 +6,8 @@ import type { GpuMeshLineCoordsBufferManager } from "$lib/gpu/buffers/GpuMeshLin
 
 export class GpuMeshLineRenderPipelineManager {
     readonly renderPipeline: GPURenderPipeline;
+    private readonly uniformsManager: GpuUniformsBufferManager;
+    private readonly meshLineCoordsManager: GpuMeshLineCoordsBufferManager;
 
     constructor({
         device,
@@ -18,6 +20,8 @@ export class GpuMeshLineRenderPipelineManager {
         uniformsManager: GpuUniformsBufferManager,
         meshLineCoordsManager: GpuMeshLineCoordsBufferManager,
     }) {
+        this.uniformsManager = uniformsManager;
+        this.meshLineCoordsManager = meshLineCoordsManager;
         const vertexModule = device.createShaderModule({
             label: "mesh line vertex module",
             code: commonModuleSrc + brushVertexModuleSrc,
@@ -31,7 +35,6 @@ export class GpuMeshLineRenderPipelineManager {
             label: "mesh line render pipeline",
             bindGroupLayouts: [
                 uniformsManager.bindGroupLayout,
-                meshLineCoordsManager.bindGroupLayout,
             ],
         });
         this.renderPipeline = device.createRenderPipeline({
@@ -98,6 +101,9 @@ export class GpuMeshLineRenderPipelineManager {
             ],
         });
         renderPassEncoder.setPipeline(this.renderPipeline);
+        renderPassEncoder.setBindGroup(0, this.uniformsManager.bindGroup);
+        renderPassEncoder.setVertexBuffer(0, this.meshLineCoordsManager.buffer);
+        renderPassEncoder.draw(this.meshLineCoordsManager.vertexCount);
         renderPassEncoder.end();
     }
 }

@@ -1,3 +1,5 @@
+@group(0) @binding(0) var<uniform> uniforms: Uniforms;
+
 @vertex
 fn brushVertex(
     @location(0) pos: vec2f,
