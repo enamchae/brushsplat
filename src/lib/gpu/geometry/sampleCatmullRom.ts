@@ -15,10 +15,10 @@ const catmullRomBasis = (tSegment: number, x0: number, x1: number, x2: number, x
 
 export const sampleCatmullRom = ({
     curvePoints,
-    nDivisons,
+    nDivisions,
 }: {
     curvePoints: CurvePoint[],
-    nDivisons: number,
+    nDivisions: number,
 }): CurvePoint[] => {
     if (curvePoints.length < 2) {
         return curvePoints;
@@ -36,8 +36,8 @@ export const sampleCatmullRom = ({
             ? curvePoints[i + 1]
             : curvePoints[i + 2];
 
-        for (let nDivision = 0; nDivision < nDivisons; nDivision++) {
-            const tSegment = nDivision / nDivisons;
+        for (let nDivision = 0; nDivision < nDivisions; nDivision++) {
+            const tSegment = nDivision / nDivisions;
             const x = catmullRomBasis(tSegment, p0.x, p1.x, p2.x, p3.x);
             const y = catmullRomBasis(tSegment, p0.y, p1.y, p2.y, p3.y);
             const radius = catmullRomBasis(tSegment, p0.radius, p1.radius, p2.radius, p3.radius);

@@ -27,7 +27,7 @@ export class GpuBrushRunner {
         const uniformsManager = new GpuUniformsBufferManager({ device });
         uniformsManager.writeResolution(800, 800);
 
-        const sampledPoints = sampleCatmullRom({curvePoints, nDivisons: 8});
+        const sampledPoints = sampleCatmullRom({curvePoints, nDivisions: 8});
 
         const meshLineCoordsManager = new GpuMeshLineCoordsBufferManager({device, curvePoints: sampledPoints});
         const meshLineRenderPipelineManager = new GpuMeshLineRenderPipelineManager({device, format, uniformsManager, meshLineCoordsManager});
