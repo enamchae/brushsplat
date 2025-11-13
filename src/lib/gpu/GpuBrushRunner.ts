@@ -18,14 +18,18 @@ export class GpuBrushRunner {
         format,
         context,
         curvePoints,
+        width,
+        height,
     }: {
         device: GPUDevice,
         format: GPUTextureFormat,
         context: GPUCanvasContext,
         curvePoints: CurvePoint[],
+        width: number,
+        height: number,
     }) {
         const uniformsManager = new GpuUniformsBufferManager({ device });
-        uniformsManager.writeResolution(800, 800);
+        uniformsManager.writeResolution(width, height);
 
         const sampledPoints = sampleCatmullRom({curvePoints, nDivisions: 8});
 
@@ -39,6 +43,11 @@ export class GpuBrushRunner {
         this.uniformsManager = uniformsManager;
         this.meshLineBufferManager = meshLineCoordsManager;
         this.meshLineRenderPipelineManager = meshLineRenderPipelineManager;
+    }
+
+
+    writeCanvasDims(width: number, height: number) {
+        this.uniformsManager.writeResolution(width, height);
     }
     
 

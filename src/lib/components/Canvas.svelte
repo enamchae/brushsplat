@@ -1,5 +1,6 @@
 <script lang="ts">
 import brushSrc from "$lib/assets/brush.png";
+    import { sampleCatmullRom } from "$lib/gpu/geometry/sampleCatmullRom";
     import { GpuBrushRunner } from "$lib/gpu/GpuBrushRunner";
 import { requestGpuDeviceAndContext } from "$lib/gpu/requestGpuDeviceAndContext";
 import { onMount } from "svelte";
@@ -19,15 +20,19 @@ onMount(async () => {
     if (response === null) return;
     const {device, context, format} = response;
 
-    const runner = new GpuBrushRunner({device, format, context, curvePoints, onStatusChange});
+    const runner = new GpuBrushRunner({device, format, context, curvePoints, width, height});
     await runner.render();
 });
 
 const curvePoints = [
-    {x: 60, y: 60, radius: 5},
-    {x: 120, y: 500, radius: 10},
-    {x: 500, y: 120, radius: 7},
+    {x: 30, y: 30, radius: 0},
+    {x: 120, y: 300, radius: 20},
+    {x: 300, y: 120, radius: 10},
+    {x: 150, y: 20, radius: 0},
 ];
+
+let width = $state(400);
+let height = $state(400);
 </script>
 
 <img
@@ -37,6 +42,6 @@ const curvePoints = [
 
 <canvas
     bind:this={canvas}
-    width={800}
-    height={800}
+    {width}
+    {height}
 ></canvas>
