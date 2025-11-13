@@ -3,25 +3,30 @@ import brushVertexModuleSrc from "$lib/gpu/shaders/brushVertex.wgsl?raw";
 import brushFragmentModuleSrc from "$lib/gpu/shaders/brushFragment.wgsl?raw";
 import { GpuUniformsBufferManager } from "$lib/gpu/buffers/GpuUniformsBufferManager";
 import type { GpuMeshLineCoordsBufferManager } from "$lib/gpu/buffers/GpuMeshLineCoordsBufferManager";
+import type { GpuBrushTextureManager } from "$lib/gpu/buffers/GpuBrushTextureManager";
 
 export class GpuMeshLineRenderPipelineManager {
     readonly renderPipeline: GPURenderPipeline;
     private readonly uniformsManager: GpuUniformsBufferManager;
     private readonly meshLineCoordsManager: GpuMeshLineCoordsBufferManager;
+    private readonly brushTextureManager: GpuBrushTextureManager;
 
     constructor({
         device,
         format,
         uniformsManager,
         meshLineCoordsManager,
+        brushTextureManager,
     }: {
         device: GPUDevice,
         format: GPUTextureFormat,
         uniformsManager: GpuUniformsBufferManager,
         meshLineCoordsManager: GpuMeshLineCoordsBufferManager,
+        brushTextureManager: GpuBrushTextureManager,
     }) {
         this.uniformsManager = uniformsManager;
         this.meshLineCoordsManager = meshLineCoordsManager;
+        this.brushTextureManager = brushTextureManager;
         const vertexModule = device.createShaderModule({
             label: "mesh line vertex module",
             code: commonModuleSrc + brushVertexModuleSrc,
@@ -35,6 +40,7 @@ export class GpuMeshLineRenderPipelineManager {
             label: "mesh line render pipeline",
             bindGroupLayouts: [
                 uniformsManager.bindGroupLayout,
+                brushTextureManager.bindGroupLayout,
             ],
         });
         this.renderPipeline = device.createRenderPipeline({
@@ -102,6 +108,7 @@ export class GpuMeshLineRenderPipelineManager {
         });
         renderPassEncoder.setPipeline(this.renderPipeline);
         renderPassEncoder.setBindGroup(0, this.uniformsManager.bindGroup);
+        renderPassEncoder.setBindGroup(1, this.brushTextureManager.bindGroup);
         renderPassEncoder.setVertexBuffer(0, this.meshLineCoordsManager.buffer);
         renderPassEncoder.draw(this.meshLineCoordsManager.vertexCount);
         renderPassEncoder.end();

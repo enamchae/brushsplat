@@ -20,19 +20,27 @@ onMount(async () => {
     if (response === null) return;
     const {device, context, format} = response;
 
-    const runner = new GpuBrushRunner({device, format, context, curvePoints, width, height});
+    const brushBitmap = await loadBrushTexture();
+
+    const runner = new GpuBrushRunner({device, format, context, curvePoints, width, height, brushBitmap});
     await runner.render();
 });
 
+const loadBrushTexture = async () => {
+    const response = await fetch(brushSrc);
+    const blob = await response.blob();
+    return await createImageBitmap(blob);
+};
+
 const curvePoints = [
     {x: 30, y: 30, radius: 0},
-    {x: 120, y: 300, radius: 20},
-    {x: 300, y: 120, radius: 10},
+    {x: 120, y: 600, radius: 40},
+    {x: 600, y: 320, radius: 20},
     {x: 150, y: 20, radius: 0},
 ];
 
-let width = $state(400);
-let height = $state(400);
+let width = $state(800);
+let height = $state(800);
 </script>
 
 <img

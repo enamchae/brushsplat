@@ -1,5 +1,3 @@
-import type { Mat4 } from "wgpu-matrix";
-
 export class GpuUniformsBufferManager {
     private readonly device: GPUDevice;
 
@@ -53,5 +51,9 @@ export class GpuUniformsBufferManager {
 
     writeResolution(width: number, height: number) {
         this.device.queue.writeBuffer(this.buffer, 0, new Float32Array([width, height]));
+    }
+
+    writeCurvePointCount(count: number) {
+        this.device.queue.writeBuffer(this.buffer, 8, new Uint32Array([count]));
     }
 }

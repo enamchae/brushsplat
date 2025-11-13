@@ -1,5 +1,6 @@
 struct Uniforms {
     resolution: vec2f,
+    curvePointCount: u32,
 }
 
 struct MeshLine {

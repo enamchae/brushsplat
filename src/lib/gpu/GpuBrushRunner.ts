@@ -1,17 +1,19 @@
 import { GpuUniformsBufferManager } from "./buffers/GpuUniformsBufferManager";
 import { GpuMeshLineRenderPipelineManager } from "./pipelines/GpuMeshLineRenderPipelineManager";
 import { GpuMeshLineCoordsBufferManager } from "./buffers/GpuMeshLineCoordsBufferManager";
+import { GpuBrushTextureManager } from "./buffers/GpuBrushTextureManager";
 import type { CurvePoint } from "./geometry/buildMeshLineBuffer";
 import { sampleCatmullRom } from "./geometry/sampleCatmullRom";
+
 
 export class GpuBrushRunner {
     private readonly device: GPUDevice;
     private readonly context: GPUCanvasContext;
 
     readonly uniformsManager: GpuUniformsBufferManager;
+    readonly brushTextureManager: GpuBrushTextureManager;
 
     private readonly meshLineRenderPipelineManager: GpuMeshLineRenderPipelineManager;
-    private meshLineBufferManager: GpuMeshLineCoordsBufferManager | null = null;
 
     constructor({
         device,
@@ -20,6 +22,7 @@ export class GpuBrushRunner {
         curvePoints,
         width,
         height,
+        brushBitmap,
     }: {
         device: GPUDevice,
         format: GPUTextureFormat,
@@ -27,21 +30,34 @@ export class GpuBrushRunner {
         curvePoints: CurvePoint[],
         width: number,
         height: number,
+        brushBitmap: ImageBitmap,
     }) {
         const uniformsManager = new GpuUniformsBufferManager({ device });
         uniformsManager.writeResolution(width, height);
 
         const sampledPoints = sampleCatmullRom({curvePoints, nDivisions: 8});
+        uniformsManager.writeCurvePointCount(sampledPoints.length);
+
+        const brushTextureManager = new GpuBrushTextureManager({
+            device,
+            textureData: brushBitmap,
+        });
 
         const meshLineCoordsManager = new GpuMeshLineCoordsBufferManager({device, curvePoints: sampledPoints});
-        const meshLineRenderPipelineManager = new GpuMeshLineRenderPipelineManager({device, format, uniformsManager, meshLineCoordsManager});
+        const meshLineRenderPipelineManager = new GpuMeshLineRenderPipelineManager({
+            device,
+            format,
+            uniformsManager,
+            meshLineCoordsManager,
+            brushTextureManager,
+        });
         
 
         this.device = device;
         this.context = context;
 
         this.uniformsManager = uniformsManager;
-        this.meshLineBufferManager = meshLineCoordsManager;
+        this.brushTextureManager = brushTextureManager;
         this.meshLineRenderPipelineManager = meshLineRenderPipelineManager;
     }
 
