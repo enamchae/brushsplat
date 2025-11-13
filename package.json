@@ -23,6 +23,7 @@
 		"@sveltejs/kit": "^2.48.4",
 		"@sveltejs/vite-plugin-svelte": "^6.2.1",
 		"@vitest/browser": "^4.0.8",
+		"@vitest/browser-playwright": "^4.0.8",
 		"@webgpu/types": "^0.1.66",
 		"playwright": "^1.56.1",
 		"sass": "^1.94.0",

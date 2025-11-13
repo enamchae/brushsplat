@@ -62,7 +62,7 @@ export class GpuMeshLineRenderPipelineManager {
             },
 
             primitive: {
-                topology: "triangle-list",
+                topology: "triangle-strip",
             },
         });
     }
