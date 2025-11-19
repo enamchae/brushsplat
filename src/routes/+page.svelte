@@ -41,6 +41,7 @@ let image: {
         <Canvas
             onStatusChange={text => status = text}
             onErr={text => err = text}
+            referenceBitmap={image?.bitmap ?? null}
         />
     </canvas-container>
 </main>
