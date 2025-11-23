@@ -29,11 +29,12 @@ export class BrushOptimizer {
     private frameHandle: number | null = null;
 
     private currentStroke: Stroke | null = null;
+    private lastSuccessfulStroke: Stroke | null = null;
     private backgroundData: ImageData | null = null;
     private lastCost = 0;
     private optimizationSteps = 0;
     private readonly maxOptimizationSteps = 1_000;
-    private readonly convergenceThresholdFactor = 500; // Cost change threshold per pixel of radius
+    private readonly convergenceThresholdFactor = 30; // Cost change threshold per pixel of radius
 
     constructor(options: {
         ctx: CanvasRenderingContext2D;
@@ -49,8 +50,8 @@ export class BrushOptimizer {
         this.onStatusChange = options.onStatusChange;
 
         this.iterationsPerFrame = options.iterationsPerFrame ?? 1;
-        this.brushRadiusRange = options.brushRadiusRange ?? [1, 600];
-        this.strokeLengthRange = options.strokeLengthRange ?? [8, 200];
+        this.brushRadiusRange = options.brushRadiusRange ?? [1, 400];
+        this.strokeLengthRange = options.strokeLengthRange ?? [2, 16];
         this.colorJitter = options.colorJitter ?? 9;
         this.alphaRange = options.alphaRange ?? [0.8, 1];
 
@@ -130,18 +131,29 @@ export class BrushOptimizer {
         let bestCost = Infinity;
 
         for (let i = 0; i < N_CANDIDATES; i++) {
-            // Initialize stroke parameters
-            const { r, g, b } = this.sampleReferenceColor(target.index);
-            const color = this.randomizeColor(r, g, b);
-            const points = this.buildStrokePoints(target.x, target.y);
+            let candidateStroke: Stroke;
             
-            const candidateStroke = new Stroke({
-                p0: points[0],
-                p1: points[1],
-                p2: points[2],
-                color,
-                alpha: randBetween(this.alphaRange[0], this.alphaRange[1])
-            });
+            // 30% chance to try a variation of the last successful stroke
+            if (this.lastSuccessfulStroke && Math.random() < 0.7) {
+                if (Math.random() < 0.5) {
+                    candidateStroke = this.perturbStroke(this.lastSuccessfulStroke);
+                } else {
+                    candidateStroke = this.generateConnectedStroke(this.lastSuccessfulStroke);
+                }
+            } else {
+                // Initialize stroke parameters
+                const { r, g, b } = this.sampleReferenceColor(target.index);
+                const color = this.randomizeColor(r, g, b);
+                const points = this.buildStrokePoints(target.x, target.y);
+                
+                candidateStroke = new Stroke({
+                    p0: points[0],
+                    p1: points[1],
+                    p2: points[2],
+                    color,
+                    alpha: randBetween(this.alphaRange[0], this.alphaRange[1])
+                });
+            }
 
             const cost = this.calculateCostWithStroke(candidateStroke);
             if (cost < bestCost) {
@@ -162,7 +174,7 @@ export class BrushOptimizer {
     private optimizeStroke() {
         if (!this.currentStroke || !this.backgroundData) return;
 
-        const learningRate = 0.00000008; // Tunable
+        const learningRate = 0.00000005; // Tunable
         const radiusLearningRate = 0.0000005;
         const colorLearningRate = 0.000002;
         const alphaLearningRate = 0.000005;
@@ -204,11 +216,11 @@ export class BrushOptimizer {
         };
 
         const grads = {
-            p0x: (evaluate({ p0: { x: currentParams.p0.x + epsilon * currentParams.p0.radius * 0.5, y: currentParams.p0.y, radius: currentParams.p0.radius } }) - localBaseCost) / (epsilon * currentParams.p0.radius * 0.25),
+            p0x: (evaluate({ p0: { x: currentParams.p0.x + epsilon * currentParams.p0.radius * 0.25, y: currentParams.p0.y, radius: currentParams.p0.radius } }) - localBaseCost) / (epsilon * currentParams.p0.radius * 0.25),
             p0y: (evaluate({ p0: { x: currentParams.p0.x, y: currentParams.p0.y + epsilon * currentParams.p0.radius * 0.25, radius: currentParams.p0.radius } }) - localBaseCost) / (epsilon * currentParams.p0.radius * 0.25),
-            p1x: (evaluate({ p1: { x: currentParams.p1.x + epsilon * currentParams.p1.radius * 0.5, y: currentParams.p1.y, radius: currentParams.p1.radius } }) - localBaseCost) / (epsilon * currentParams.p1.radius * 0.25),
+            p1x: (evaluate({ p1: { x: currentParams.p1.x + epsilon * currentParams.p1.radius * 0.25, y: currentParams.p1.y, radius: currentParams.p1.radius } }) - localBaseCost) / (epsilon * currentParams.p1.radius * 0.25),
             p1y: (evaluate({ p1: { x: currentParams.p1.x, y: currentParams.p1.y + epsilon * currentParams.p1.radius * 0.25, radius: currentParams.p1.radius } }) - localBaseCost) / (epsilon * currentParams.p1.radius * 0.25),
-            p2x: (evaluate({ p2: { x: currentParams.p2.x + epsilon * currentParams.p2.radius * 0.5, y: currentParams.p2.y, radius: currentParams.p2.radius } }) - localBaseCost) / (epsilon * currentParams.p2.radius * 0.25),
+            p2x: (evaluate({ p2: { x: currentParams.p2.x + epsilon * currentParams.p2.radius * 0.25, y: currentParams.p2.y, radius: currentParams.p2.radius } }) - localBaseCost) / (epsilon * currentParams.p2.radius * 0.25),
             p2y: (evaluate({ p2: { x: currentParams.p2.x, y: currentParams.p2.y + epsilon * currentParams.p2.radius * 0.25, radius: currentParams.p2.radius } }) - localBaseCost) / (epsilon * currentParams.p2.radius * 0.25),
             r0: (evaluate({ p0: { ...currentParams.p0, radius: currentParams.p0.radius + epsilon } }) - localBaseCost) / epsilon,
             r1: (evaluate({ p1: { ...currentParams.p1, radius: currentParams.p1.radius + epsilon } }) - localBaseCost) / epsilon,
@@ -276,6 +288,9 @@ export class BrushOptimizer {
         
         this.drawStrokeToCanvas(this.currentStroke);
         
+        // Store successful stroke for next iteration
+        this.lastSuccessfulStroke = new Stroke(this.currentStroke);
+
         this.currentData = this.ctx.getImageData(0, 0, this.width, this.height);
         this.recomputeDifferenceMap();
         this.nIteration++;
@@ -375,6 +390,89 @@ export class BrushOptimizer {
         };
 
         return [p0, p1, p2];
+    }
+
+    private perturbStroke(stroke: Stroke): Stroke {
+        const posJitter = 10;
+        const radiusJitter = 2;
+        const colorJitter = 10;
+        const alphaJitter = 0.1;
+
+        const perturbPoint = (p: Point): Point => ({
+            x: clamp(p.x + randBetween(-posJitter, posJitter), 0, this.width),
+            y: clamp(p.y + randBetween(-posJitter, posJitter), 0, this.height),
+            radius: clamp(p.radius + randBetween(-radiusJitter, radiusJitter), this.brushRadiusRange[0], this.brushRadiusRange[1])
+        });
+
+        return new Stroke({
+            p0: perturbPoint(stroke.p0),
+            p1: perturbPoint(stroke.p1),
+            p2: perturbPoint(stroke.p2),
+            color: {
+                r: clamp(stroke.color.r + randBetween(-colorJitter, colorJitter), 0, 255),
+                g: clamp(stroke.color.g + randBetween(-colorJitter, colorJitter), 0, 255),
+                b: clamp(stroke.color.b + randBetween(-colorJitter, colorJitter), 0, 255)
+            },
+            alpha: clamp(stroke.alpha + randBetween(-alphaJitter, alphaJitter), this.alphaRange[0], this.alphaRange[1])
+        });
+    }
+
+
+
+    private generateConnectedStroke(refStroke: Stroke): Stroke {
+        // Pick either start or end of the reference stroke
+        const pickStart = Math.random() < 0.5;
+        const basePoint = pickStart ? refStroke.p0 : refStroke.p2;
+        
+        const posJitter = 5;
+        const radiusJitter = 2;
+        const colorJitter = 10;
+        const alphaJitter = 0.1;
+
+        const startX = clamp(basePoint.x + randBetween(-posJitter, posJitter), 0, this.width);
+        const startY = clamp(basePoint.y + randBetween(-posJitter, posJitter), 0, this.height);
+        
+        // Inherit radius with jitter
+        const baseRadius = basePoint.radius;
+        const newRadius = clamp(baseRadius + randBetween(-radiusJitter, radiusJitter), this.brushRadiusRange[0], this.brushRadiusRange[1]);
+
+        // Generate other points based on angle and length
+        const angle = Math.random() * Math.PI * 2;
+        const length = randBetweenExponential(this.strokeLengthRange[0], this.strokeLengthRange[1]);
+        const controlJitter = this.brushRadiusRange[0] * 0.75;
+
+        const p0 = {
+            x: startX,
+            y: startY,
+            radius: newRadius
+        };
+
+        const p1 = {
+            x: clamp(startX + Math.cos(angle) * length * newRadius + randBetween(-controlJitter, controlJitter), 0, this.width),
+            y: clamp(startY + Math.sin(angle) * length * newRadius + randBetween(-controlJitter, controlJitter), 0, this.height),
+            radius: clamp(newRadius + randBetween(-radiusJitter, radiusJitter), this.brushRadiusRange[0], this.brushRadiusRange[1])
+        };
+
+        const p2 = {
+            x: clamp(startX + Math.cos(angle) * length * p1.radius + randBetween(-controlJitter, controlJitter), 0, this.width),
+            y: clamp(startY + Math.sin(angle) * length * p1.radius + randBetween(-controlJitter, controlJitter), 0, this.height),
+            radius: clamp(newRadius + randBetween(-radiusJitter, radiusJitter), this.brushRadiusRange[0], this.brushRadiusRange[1])
+        };
+
+        // Inherit color with jitter
+        const color = {
+            r: clamp(refStroke.color.r + randBetween(-colorJitter, colorJitter), 0, 255),
+            g: clamp(refStroke.color.g + randBetween(-colorJitter, colorJitter), 0, 255),
+            b: clamp(refStroke.color.b + randBetween(-colorJitter, colorJitter), 0, 255)
+        };
+
+        return new Stroke({
+            p0,
+            p1,
+            p2,
+            color,
+            alpha: clamp(refStroke.alpha + randBetween(-alphaJitter, alphaJitter), this.alphaRange[0], this.alphaRange[1])
+        });
     }
 
     private recomputeDifferenceMap() {
