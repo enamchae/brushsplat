@@ -66,8 +66,8 @@ export class BrushOptimizer {
         this.onError = options.onError;
 
         this.iterationsPerFrame = options.iterationsPerFrame ?? 1;
-        this.brushRadiusRange = options.brushRadiusRange ?? [1, 600];
-        this.strokeLengthRange = options.strokeLengthRange ?? [16, 84];
+        this.brushRadiusRange = options.brushRadiusRange ?? [1, 100];
+        this.strokeLengthRange = options.strokeLengthRange ?? [16, 200];
         this.colorJitter = options.colorJitter ?? 18;
         this.alphaRange = options.alphaRange ?? [0.8, 1];
 
@@ -268,7 +268,19 @@ export class BrushOptimizer {
     }
 
     private finalizeStroke() {
-        if (!this.currentStroke) return;
+        if (!this.currentStroke || !this.backgroundData) return;
+
+        // Check if the stroke improved the image
+        // this.lastCost is the cost WITH the stroke
+        // this.totalDifference is the cost WITHOUT the stroke (from the previous iteration)
+        if (this.lastCost > this.totalDifference) {
+            // The stroke made it worse, discard it
+            this.ctx.putImageData(this.backgroundData, 0, 0);
+            this.currentStroke = null;
+            this.backgroundData = null;
+            // console.log("Dropped bad stroke");
+            return;
+        }
         
         this.drawStrokeToCanvas(this.currentStroke);
         
