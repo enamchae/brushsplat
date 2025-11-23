@@ -1,92 +1,93 @@
 <script lang="ts">
-import { BrushOptimizer } from "$lib/optimization/BrushOptimizer";
-import { onDestroy, onMount } from "svelte";
+    import { BrushOptimizer } from "$lib/optimization/BrushOptimizer";
+    import { onDestroy, onMount } from "svelte";
 
-const {
-    onStatusChange,
-    onErr,
-    referenceBitmap,
-}: {
-    onStatusChange: (text: string) => void,
-    onErr: (text: string) => void,
-    referenceBitmap: ImageBitmap | null,
-} = $props();
-
-const DEFAULT_CANVAS_SIZE = 800;
-
-let canvas: HTMLCanvasElement;
-let ctx: CanvasRenderingContext2D | null = null;
-let optimizer: BrushOptimizer | null = null;
-
-let width = $state(DEFAULT_CANVAS_SIZE);
-let height = $state(DEFAULT_CANVAS_SIZE);
-
-const stopOptimizer = () => {
-    if (!optimizer) return;
-    optimizer.destroy();
-    optimizer = null;
-};
-
-const resetCanvas = (targetWidth: number, targetHeight: number) => {
-    if (!ctx) return;
-    ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.globalAlpha = 1;
-    ctx.clearRect(0, 0, targetWidth, targetHeight);
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, targetWidth, targetHeight);
-    ctx.restore();
-};
-
-onMount(() => {
-    ctx = canvas.getContext("2d", {willReadFrequently: true});
-    if (!ctx) {
-        onErr("can't get 2d context");
-        return;
-    }
-    resetCanvas(width, height);
-});
-
-onDestroy(() => {
-    stopOptimizer();
-});
-
-$effect(() => {
-    if (!canvas || !ctx) return;
-
-    if (!referenceBitmap) {
-        stopOptimizer();
-        width = DEFAULT_CANVAS_SIZE;
-        height = DEFAULT_CANVAS_SIZE;
-        canvas.width = DEFAULT_CANVAS_SIZE;
-        canvas.height = DEFAULT_CANVAS_SIZE;
-        resetCanvas(DEFAULT_CANVAS_SIZE, DEFAULT_CANVAS_SIZE);
-        onStatusChange("waiting for reference image");
-        return;
-    }
-
-    const nextWidth = referenceBitmap.width;
-    const nextHeight = referenceBitmap.height;
-
-    width = nextWidth;
-    height = nextHeight;
-    canvas.width = nextWidth;
-    canvas.height = nextHeight;
-
-    resetCanvas(nextWidth, nextHeight);
-
-    stopOptimizer();
-    optimizer = new BrushOptimizer({
-        canvas,
-        ctx,
-        referenceBitmap,
+    const {
         onStatusChange,
-        onError: onErr,
-    });
-    optimizer.start();
-});
+        onErr,
+        referenceBitmap,
+    }: {
+        onStatusChange: (text: string) => void;
+        onErr: (text: string) => void;
+        referenceBitmap: ImageBitmap | null;
+    } = $props();
 
-/*
+    const DEFAULT_CANVAS_SIZE = 800;
+
+    let canvas: HTMLCanvasElement;
+    let ctx: CanvasRenderingContext2D | null = null;
+    let optimizer: BrushOptimizer | null = null;
+
+    let width = $state(DEFAULT_CANVAS_SIZE);
+    let height = $state(DEFAULT_CANVAS_SIZE);
+
+    const stopOptimizer = () => {
+        if (!optimizer) return;
+        optimizer.destroy();
+        optimizer = null;
+    };
+
+    const resetCanvas = (targetWidth: number, targetHeight: number) => {
+        if (!ctx) return;
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = 1;
+        ctx.clearRect(0, 0, targetWidth, targetHeight);
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, targetWidth, targetHeight);
+        ctx.restore();
+    };
+
+    onMount(() => {
+        ctx = canvas.getContext("2d", { willReadFrequently: true });
+        if (!ctx) {
+            onErr("can't get 2d context");
+            return;
+        }
+        resetCanvas(width, height);
+    });
+
+    onDestroy(() => {
+        stopOptimizer();
+    });
+
+    $effect(() => {
+        if (!canvas || !ctx) return;
+
+        if (!referenceBitmap) {
+            stopOptimizer();
+            width = DEFAULT_CANVAS_SIZE;
+            height = DEFAULT_CANVAS_SIZE;
+            canvas.width = DEFAULT_CANVAS_SIZE;
+            canvas.height = DEFAULT_CANVAS_SIZE;
+            resetCanvas(DEFAULT_CANVAS_SIZE, DEFAULT_CANVAS_SIZE);
+            onStatusChange("waiting for reference image");
+            return;
+        }
+
+        const nextWidth = referenceBitmap.width;
+        const nextHeight = referenceBitmap.height;
+
+        width = nextWidth;
+        height = nextHeight;
+        canvas.width = nextWidth;
+        canvas.height = nextHeight;
+
+        resetCanvas(nextWidth, nextHeight);
+
+        stopOptimizer();
+        optimizer = new BrushOptimizer({
+            canvas,
+            ctx,
+            referenceBitmap,
+            onStatusChange,
+            onError: onErr,
+            iterationsPerFrame: 2,
+        });
+        optimizer.start();
+    });
+
+    /*
 import brushSrc from "$lib/assets/brush.png";
 import { sampleCatmullRom } from "$lib/gpu/geometry/sampleCatmullRom";
 import { GpuBrushRunner } from "$lib/gpu/GpuBrushRunner";
@@ -118,8 +119,4 @@ onMount(async () => {
 */
 </script>
 
-<canvas
-    bind:this={canvas}
-    {width}
-    {height}
-></canvas>
+<canvas bind:this={canvas} {width} {height}></canvas>

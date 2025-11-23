@@ -44,6 +44,21 @@ export class BrushOptimizer {
     private running = false;
     private frameHandle: number | null = null;
 
+    // Optimization state
+    private currentStroke: {
+        p0: StrokePoint;
+        p1: StrokePoint;
+        p2: StrokePoint;
+        radius: number;
+        color: { r: number; g: number; b: number };
+        alpha: number;
+    } | null = null;
+    private backgroundData: ImageData | null = null;
+    private lastCost = 0;
+    private optimizationSteps = 0;
+    private readonly maxOptimizationSteps = 1_500;
+    private readonly convergenceThreshold = 1_000; // Change in cost threshold
+
     constructor(options: BrushOptimizerOptions) {
         this.canvas = options.canvas;
         this.ctx = options.ctx;
@@ -51,10 +66,10 @@ export class BrushOptimizer {
         this.onError = options.onError;
 
         this.iterationsPerFrame = options.iterationsPerFrame ?? 1;
-        this.brushRadiusRange = options.brushRadiusRange ?? [6, 28];
+        this.brushRadiusRange = options.brushRadiusRange ?? [1, 600];
         this.strokeLengthRange = options.strokeLengthRange ?? [16, 84];
         this.colorJitter = options.colorJitter ?? 18;
-        this.alphaRange = options.alphaRange ?? [0.08, 0.35];
+        this.alphaRange = options.alphaRange ?? [0.8, 1];
 
         this.width = options.referenceBitmap.width;
         this.height = options.referenceBitmap.height;
@@ -102,37 +117,219 @@ export class BrushOptimizer {
     private loop = () => {
         if (!this.running) return;
 
-        for (let i = 0; i < this.iterationsPerFrame; i += 1) {
-            const shouldContinue = this.performIteration();
-            if (!shouldContinue) {
+        // Perform one step of the state machine per frame (or more if we want to speed up)
+        // For visual feedback, we might want to do 1 optimization step per frame, 
+        // or a few. Let's try to do a few optimization steps or 1 initialization step.
+        
+        if (!this.currentStroke) {
+            // Initialization Phase
+            const success = this.startNewStroke();
+            if (!success) {
                 this.stop();
                 this.onStatusChange?.("Optimization complete");
                 return;
+            }
+        } else {
+            // Optimization Phase
+            for (let i = 0; i < this.iterationsPerFrame; i++) {
+                this.optimizeStroke();
             }
         }
 
         this.frameHandle = requestAnimationFrame(this.loop);
     };
 
-    private performIteration(): boolean {
-        if (this.totalDifference <= 1e-3) {
-            return false;
-        }
+    private startNewStroke(): boolean {
+        if (this.totalDifference <= 1e-3) return false;
 
         const target = this.pickTargetPixel();
-        if (!target) {
-            return false;
-        }
+        if (!target) return false;
 
-        this.applyStroke(target.index, target.x, target.y);
-        this.refreshCanvasSnapshot();
-        this.recomputeDifferenceMap();
-        this.iterationCount += 1;
+        // Save background
+        this.backgroundData = this.ctx.getImageData(0, 0, this.width, this.height);
+
+        // Initialize stroke parameters
+        const { r, g, b } = this.sampleReferenceColor(target.index);
+        const color = this.randomizeColor(r, g, b);
+        const radius = randBetween(this.brushRadiusRange[0], this.brushRadiusRange[1]);
+        const length = randBetween(this.strokeLengthRange[0], this.strokeLengthRange[1]);
+        const points = this.buildStrokePoints({ x: target.x, y: target.y }, radius, length);
+        
+        this.currentStroke = {
+            p0: points[0],
+            p1: points[1],
+            p2: points[2],
+            radius,
+            color,
+            alpha: randBetween(this.alphaRange[0], this.alphaRange[1])
+        };
+
+        this.optimizationSteps = 0;
+        this.lastCost = this.calculateCostWithStroke(this.currentStroke);
+        
+        return true;
+    }
+
+    private optimizeStroke() {
+        if (!this.currentStroke || !this.backgroundData) return;
+
+        const learningRate = 0.000001; // Tunable
+        const radiusLearningRate = 0.0002;
+        const colorLearningRate = 0.00001;
+        const alphaLearningRate = 0.00002;
+        const epsilon = 3;
+        const alphaEpsilon = 0.01;
+
+        // Parameters to optimize: p0.x, p0.y, p1.x, p1.y, p2.x, p2.y, radius, r, g, b, alpha
+        const currentParams = { ...this.currentStroke };
+        
+        // Calculate bounding box for local cost computation
+        // Include margin for epsilon and stroke width
+        const margin = this.currentStroke.radius + epsilon + 2;
+        const minX = Math.min(currentParams.p0.x, currentParams.p1.x, currentParams.p2.x) - margin;
+        const minY = Math.min(currentParams.p0.y, currentParams.p1.y, currentParams.p2.y) - margin;
+        const maxX = Math.max(currentParams.p0.x, currentParams.p1.x, currentParams.p2.x) + margin;
+        const maxY = Math.max(currentParams.p0.y, currentParams.p1.y, currentParams.p2.y) + margin;
+        
+        const bbox = {
+            x: Math.floor(clamp(minX, 0, this.width)),
+            y: Math.floor(clamp(minY, 0, this.height)),
+            w: 0,
+            h: 0
+        };
+        bbox.w = Math.ceil(clamp(maxX - bbox.x, 0, this.width - bbox.x));
+        bbox.h = Math.ceil(clamp(maxY - bbox.y, 0, this.height - bbox.y));
+
+        // If bbox is invalid, skip
+        if (bbox.w <= 0 || bbox.h <= 0) return;
+
+        const localBaseCost = this.calculateCostWithStroke(currentParams, bbox);
+
+        const evaluate = (mod: Partial<typeof currentParams>) => {
+            const tempStroke = { ...currentParams, ...mod };
+            tempStroke.radius = clamp(tempStroke.radius, this.brushRadiusRange[0], this.brushRadiusRange[1]);
+            return this.calculateCostWithStroke(tempStroke, bbox);
+        };
+
+        const posEpsilon = epsilon;
+
+        const grads = {
+            p0x: (evaluate({ p0: { x: currentParams.p0.x + posEpsilon, y: currentParams.p0.y } }) - localBaseCost) / posEpsilon,
+            p0y: (evaluate({ p0: { x: currentParams.p0.x, y: currentParams.p0.y + posEpsilon } }) - localBaseCost) / posEpsilon,
+            p1x: (evaluate({ p1: { x: currentParams.p1.x + posEpsilon, y: currentParams.p1.y } }) - localBaseCost) / posEpsilon,
+            p1y: (evaluate({ p1: { x: currentParams.p1.x, y: currentParams.p1.y + posEpsilon } }) - localBaseCost) / posEpsilon,
+            p2x: (evaluate({ p2: { x: currentParams.p2.x + posEpsilon, y: currentParams.p2.y } }) - localBaseCost) / posEpsilon,
+            p2y: (evaluate({ p2: { x: currentParams.p2.x, y: currentParams.p2.y + posEpsilon } }) - localBaseCost) / posEpsilon,
+            radius: (evaluate({ radius: currentParams.radius + epsilon }) - localBaseCost) / epsilon,
+            r: (evaluate({ color: { ...currentParams.color, r: currentParams.color.r + epsilon } }) - localBaseCost) / epsilon,
+            g: (evaluate({ color: { ...currentParams.color, g: currentParams.color.g + epsilon } }) - localBaseCost) / epsilon,
+            b: (evaluate({ color: { ...currentParams.color, b: currentParams.color.b + epsilon } }) - localBaseCost) / epsilon,
+            alpha: (evaluate({ alpha: currentParams.alpha + alphaEpsilon }) - localBaseCost) / alphaEpsilon
+        };
+
+        const posLearningRate = learningRate * this.currentStroke.radius / this.currentStroke.alpha;
+        this.currentStroke.p0.x -= grads.p0x * posLearningRate;
+        this.currentStroke.p0.y -= grads.p0y * posLearningRate;
+        this.currentStroke.p1.x -= grads.p1x * posLearningRate;
+        this.currentStroke.p1.y -= grads.p1y * posLearningRate;
+        this.currentStroke.p2.x -= grads.p2x * posLearningRate;
+        this.currentStroke.p2.y -= grads.p2y * posLearningRate;
+        this.currentStroke.radius -= grads.radius * radiusLearningRate;
+        
+        this.currentStroke.color.r -= grads.r * colorLearningRate;
+        this.currentStroke.color.g -= grads.g * colorLearningRate;
+        this.currentStroke.color.b -= grads.b * colorLearningRate;
+        this.currentStroke.alpha -= grads.alpha * alphaLearningRate;
+
+        this.currentStroke.radius = clamp(this.currentStroke.radius, this.brushRadiusRange[0], this.brushRadiusRange[1]);
+        this.currentStroke.color.r = clamp(this.currentStroke.color.r, 0, 255);
+        this.currentStroke.color.g = clamp(this.currentStroke.color.g, 0, 255);
+        this.currentStroke.color.b = clamp(this.currentStroke.color.b, 0, 255);
+        this.currentStroke.alpha = clamp(this.currentStroke.alpha, this.alphaRange[0], this.alphaRange[1]);
+
+        // Draw and update global cost (for display and convergence check)
+        // We can approximate global cost change by local cost change to save one full read
+        const newLocalCost = this.calculateCostWithStroke(this.currentStroke, bbox);
+        const costChange = localBaseCost - newLocalCost;
+        const newGlobalCost = this.lastCost - costChange;
+
+        this.lastCost = newGlobalCost;
+        this.optimizationSteps++;
+
+        this.drawStrokeToCanvas(this.currentStroke);
+
         this.onStatusChange?.(
-            `Δrgb avg: ${(this.totalDifference / this.differenceMap.length).toFixed(2)} · strokes: ${this.iterationCount}`,
+            `Cost: ${newGlobalCost.toFixed(0)} · Step: ${this.optimizationSteps}`
         );
 
-        return true;
+        if (this.optimizationSteps >= this.maxOptimizationSteps || (Math.abs(costChange) < this.convergenceThreshold && this.optimizationSteps > 5)) {
+            this.finalizeStroke();
+        }
+    }
+
+    private finalizeStroke() {
+        if (!this.currentStroke) return;
+        
+        this.drawStrokeToCanvas(this.currentStroke);
+        
+        this.currentData = this.ctx.getImageData(0, 0, this.width, this.height);
+        this.recomputeDifferenceMap();
+        this.iterationCount++;
+        
+        this.currentStroke = null;
+        this.backgroundData = null;
+    }
+
+    private drawStrokeToCanvas(stroke: NonNullable<typeof this.currentStroke>) {
+        if (!this.backgroundData) return;
+        
+        this.ctx.putImageData(this.backgroundData, 0, 0);
+        
+        this.ctx.save();
+        this.ctx.globalAlpha = stroke.alpha;
+        this.ctx.lineCap = "round";
+        this.ctx.lineJoin = "round";
+        this.ctx.lineWidth = stroke.radius;
+        this.ctx.strokeStyle = `rgb(${stroke.color.r}, ${stroke.color.g}, ${stroke.color.b})`;
+        this.ctx.beginPath();
+        this.ctx.moveTo(stroke.p0.x, stroke.p0.y);
+        this.ctx.quadraticCurveTo(stroke.p1.x, stroke.p1.y, stroke.p2.x, stroke.p2.y);
+        this.ctx.stroke();
+        this.ctx.restore();
+    }
+
+    private calculateCostWithStroke(
+        stroke: NonNullable<typeof this.currentStroke>, 
+        bbox?: { x: number, y: number, w: number, h: number }
+    ): number {
+        this.drawStrokeToCanvas(stroke);
+        
+        const bx = bbox ? bbox.x : 0;
+        const by = bbox ? bbox.y : 0;
+        const bw = bbox ? bbox.w : this.width;
+        const bh = bbox ? bbox.h : this.height;
+
+        const currentPatch = this.ctx.getImageData(bx, by, bw, bh);
+        
+        let cost = 0;
+        const refData = this.referenceData.data;
+        const curData = currentPatch.data;
+        
+        for (let y = 0; y < bh; y++) {
+            for (let x = 0; x < bw; x++) {
+                const globalX = bx + x;
+                const globalY = by + y;
+                const globalIdx = (globalY * this.width + globalX) * 4;
+                const localIdx = (y * bw + x) * 4;
+                
+                const dr = refData[globalIdx] - curData[localIdx];
+                const dg = refData[globalIdx + 1] - curData[localIdx + 1];
+                const db = refData[globalIdx + 2] - curData[localIdx + 2];
+                
+                cost += Math.sqrt(dr*dr + dg*dg + db*db);
+            }
+        }
+        return cost;
     }
 
     private pickTargetPixel(): { x: number; y: number; index: number } | null {
@@ -152,28 +349,6 @@ export class BrushOptimizer {
         }
 
         return null;
-    }
-
-    private applyStroke(pixelIndex: number, x: number, y: number) {
-        const { r, g, b } = this.sampleReferenceColor(pixelIndex);
-        const color = this.randomizeColor(r, g, b);
-
-        const radius = randBetween(this.brushRadiusRange[0], this.brushRadiusRange[1]);
-        const length = randBetween(this.strokeLengthRange[0], this.strokeLengthRange[1]);
-        const points = this.buildStrokePoints({ x, y }, radius, length);
-        const [p0, p1, p2] = points;
-
-        this.ctx.save();
-        this.ctx.globalAlpha = randBetween(this.alphaRange[0], this.alphaRange[1]);
-        this.ctx.lineCap = "round";
-        this.ctx.lineJoin = "round";
-        this.ctx.lineWidth = radius;
-        this.ctx.strokeStyle = `rgb(${color.r}, ${color.g}, ${color.b})`;
-        this.ctx.beginPath();
-        this.ctx.moveTo(p0.x, p0.y);
-        this.ctx.quadraticCurveTo(p1.x, p1.y, p2.x, p2.y);
-        this.ctx.stroke();
-        this.ctx.restore();
     }
 
     private buildStrokePoints(origin: StrokePoint, radius: number, length: number): [StrokePoint, StrokePoint, StrokePoint] {
@@ -199,15 +374,6 @@ export class BrushOptimizer {
         };
 
         return [p0, p1, p2];
-    }
-
-    private refreshCanvasSnapshot() {
-        try {
-            this.currentData = this.ctx.getImageData(0, 0, this.width, this.height);
-        } catch (err) {
-            this.onError?.("Failed to read canvas pixels");
-            throw err;
-        }
     }
 
     private recomputeDifferenceMap() {
