@@ -1,31 +1,11 @@
-type BrushOptimizerOptions = {
-    canvas: HTMLCanvasElement;
-    ctx: CanvasRenderingContext2D;
-    referenceBitmap: ImageBitmap;
-    iterationsPerFrame?: number;
-    brushRadiusRange?: [number, number];
-    colorJitter?: number;
-    alphaRange?: [number, number];
-    strokeLengthRange?: [number, number];
-    onStatusChange?: (text: string) => void;
-    onError?: (text: string) => void;
-};
+import { Stroke } from "./Stroke";
+import { clamp, randBetween, randBetweenExponential } from "./util";
 
-type StrokePoint = {
+export type StrokePoint = {
     x: number;
     y: number;
 };
-
-const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
-
-const randBetween = (min: number, max: number) => min + Math.random() * (max - min);
-
-const randBetweenExponential = (min: number, max: number) => {
-    return min * Math.pow(max / min, Math.random());
-};
-
 export class BrushOptimizer {
-    private readonly canvas: HTMLCanvasElement;
     private readonly ctx: CanvasRenderingContext2D;
     private readonly width: number;
     private readonly height: number;
@@ -36,7 +16,6 @@ export class BrushOptimizer {
     private readonly colorJitter: number;
     private readonly alphaRange: [number, number];
     private readonly onStatusChange?: (text: string) => void;
-    private readonly onError?: (text: string) => void;
 
     private readonly referenceData: ImageData;
 
@@ -48,31 +27,30 @@ export class BrushOptimizer {
     private running = false;
     private frameHandle: number | null = null;
 
-    // Optimization state
-    private currentStroke: {
-        p0: StrokePoint;
-        p1: StrokePoint;
-        p2: StrokePoint;
-        radius: number;
-        color: { r: number; g: number; b: number };
-        alpha: number;
-    } | null = null;
+    private currentStroke: Stroke | null = null;
     private backgroundData: ImageData | null = null;
     private lastCost = 0;
     private optimizationSteps = 0;
-    private readonly maxOptimizationSteps = 1_500;
-    private readonly convergenceThresholdFactor = 10; // Cost change threshold per pixel of radius
+    private readonly maxOptimizationSteps = 1_000;
+    private readonly convergenceThresholdFactor = 0.3; // Cost change threshold per pixel of radius
 
-    constructor(options: BrushOptimizerOptions) {
-        this.canvas = options.canvas;
+    constructor(options: {
+        ctx: CanvasRenderingContext2D;
+        referenceBitmap: ImageBitmap;
+        iterationsPerFrame?: number;
+        brushRadiusRange?: [number, number];
+        colorJitter?: number;
+        alphaRange?: [number, number];
+        strokeLengthRange?: [number, number];
+        onStatusChange?: (text: string) => void;
+    }) {
         this.ctx = options.ctx;
         this.onStatusChange = options.onStatusChange;
-        this.onError = options.onError;
 
         this.iterationsPerFrame = options.iterationsPerFrame ?? 1;
-        this.brushRadiusRange = options.brushRadiusRange ?? [1, 400];
+        this.brushRadiusRange = options.brushRadiusRange ?? [1, 600];
         this.strokeLengthRange = options.strokeLengthRange ?? [16, 200];
-        this.colorJitter = options.colorJitter ?? 18;
+        this.colorJitter = options.colorJitter ?? 9;
         this.alphaRange = options.alphaRange ?? [0.8, 1];
 
         this.width = options.referenceBitmap.width;
@@ -121,12 +99,7 @@ export class BrushOptimizer {
     private loop = () => {
         if (!this.running) return;
 
-        // Perform one step of the state machine per frame (or more if we want to speed up)
-        // For visual feedback, we might want to do 1 optimization step per frame, 
-        // or a few. Let's try to do a few optimization steps or 1 initialization step.
-        
-        if (!this.currentStroke) {
-            // Initialization Phase
+        if (this.currentStroke === null) {
             const success = this.startNewStroke();
             if (!success) {
                 this.stop();
@@ -134,7 +107,6 @@ export class BrushOptimizer {
                 return;
             }
         } else {
-            // Optimization Phase
             for (let i = 0; i < this.iterationsPerFrame; i++) {
                 this.optimizeStroke();
             }
@@ -149,15 +121,14 @@ export class BrushOptimizer {
         const target = this.pickTargetPixel();
         if (!target) return false;
 
-        // Save background
         this.backgroundData = this.ctx.getImageData(0, 0, this.width, this.height);
 
-        // Best-of-N strategy
-        const CANDIDATES = 10;
-        let bestStroke = null;
+        // Select the best of N candidates to optimize
+        const N_CANDIDATES = 100;
+        let bestStroke: Stroke | null = null;
         let bestCost = Infinity;
 
-        for (let i = 0; i < CANDIDATES; i++) {
+        for (let i = 0; i < N_CANDIDATES; i++) {
             // Initialize stroke parameters
             const { r, g, b } = this.sampleReferenceColor(target.index);
             const color = this.randomizeColor(r, g, b);
@@ -165,14 +136,14 @@ export class BrushOptimizer {
             const length = randBetween(this.strokeLengthRange[0], this.strokeLengthRange[1]);
             const points = this.buildStrokePoints({ x: target.x, y: target.y }, radius, length);
             
-            const candidateStroke = {
+            const candidateStroke = new Stroke({
                 p0: points[0],
                 p1: points[1],
                 p2: points[2],
                 radius,
                 color,
                 alpha: randBetween(this.alphaRange[0], this.alphaRange[1])
-            };
+            });
 
             const cost = this.calculateCostWithStroke(candidateStroke);
             if (cost < bestCost) {
@@ -181,7 +152,7 @@ export class BrushOptimizer {
             }
         }
 
-        if (!bestStroke) return false;
+        if (bestStroke === null) return false;
 
         this.currentStroke = bestStroke;
         this.optimizationSteps = 0;
@@ -194,14 +165,14 @@ export class BrushOptimizer {
         if (!this.currentStroke || !this.backgroundData) return;
 
         const learningRate = 0.000001; // Tunable
-        const radiusLearningRate = 0.0002;
+        const radiusLearningRate = 0.0001;
         const colorLearningRate = 0.00001;
         const alphaLearningRate = 0.000005;
-        const epsilon = 3;
+        const epsilon = 1;
         const alphaEpsilon = 0.01;
 
         // Parameters to optimize: p0.x, p0.y, p1.x, p1.y, p2.x, p2.y, radius, r, g, b, alpha
-        const currentParams = { ...this.currentStroke };
+        const currentParams = new Stroke(this.currentStroke);
         
         // Calculate bounding box for local cost computation
         // Include margin for epsilon and stroke width
@@ -226,7 +197,7 @@ export class BrushOptimizer {
         const localBaseCost = this.calculateCostWithStroke(currentParams, bbox);
 
         const evaluate = (mod: Partial<typeof currentParams>) => {
-            const tempStroke = { ...currentParams, ...mod };
+            const tempStroke = new Stroke({ ...currentParams, ...mod });
             tempStroke.radius = clamp(tempStroke.radius, this.brushRadiusRange[0], this.brushRadiusRange[1]);
             return this.calculateCostWithStroke(tempStroke, bbox);
         };
@@ -267,8 +238,6 @@ export class BrushOptimizer {
         this.currentStroke.color.b = clamp(this.currentStroke.color.b, 0, 255);
         this.currentStroke.alpha = clamp(this.currentStroke.alpha, this.alphaRange[0], this.alphaRange[1]);
 
-        // Draw and update global cost (for display and convergence check)
-        // We can approximate global cost change by local cost change to save one full read
         const newLocalCost = this.calculateCostWithStroke(this.currentStroke, bbox);
         const costChange = localBaseCost - newLocalCost;
         const newGlobalCost = this.lastCost - costChange;
@@ -283,7 +252,7 @@ export class BrushOptimizer {
         );
 
         const convergenceThreshold = this.currentStroke.radius * this.convergenceThresholdFactor;
-        if (this.optimizationSteps >= this.maxOptimizationSteps || (Math.abs(costChange) < convergenceThreshold && this.optimizationSteps > 5)) {
+        if (this.optimizationSteps >= this.maxOptimizationSteps || (Math.abs(costChange) < convergenceThreshold && this.optimizationSteps > 2)) {
             this.finalizeStroke();
         }
     }
@@ -291,15 +260,11 @@ export class BrushOptimizer {
     private finalizeStroke() {
         if (!this.currentStroke || !this.backgroundData) return;
 
-        // Check if the stroke improved the image
-        // this.lastCost is the cost WITH the stroke
-        // this.totalDifference is the cost WITHOUT the stroke (from the previous iteration)
         if (this.lastCost > this.totalDifference) {
             // The stroke made it worse, discard it
             this.ctx.putImageData(this.backgroundData, 0, 0);
             this.currentStroke = null;
             this.backgroundData = null;
-            // console.log("Dropped bad stroke");
             return;
         }
         
@@ -313,26 +278,16 @@ export class BrushOptimizer {
         this.backgroundData = null;
     }
 
-    private drawStrokeToCanvas(stroke: NonNullable<typeof this.currentStroke>) {
+    private drawStrokeToCanvas(stroke: Stroke) {
         if (!this.backgroundData) return;
         
         this.ctx.putImageData(this.backgroundData, 0, 0);
         
-        this.ctx.save();
-        this.ctx.globalAlpha = stroke.alpha;
-        this.ctx.lineCap = "round";
-        this.ctx.lineJoin = "round";
-        this.ctx.lineWidth = stroke.radius;
-        this.ctx.strokeStyle = `rgb(${stroke.color.r}, ${stroke.color.g}, ${stroke.color.b})`;
-        this.ctx.beginPath();
-        this.ctx.moveTo(stroke.p0.x, stroke.p0.y);
-        this.ctx.quadraticCurveTo(stroke.p1.x, stroke.p1.y, stroke.p2.x, stroke.p2.y);
-        this.ctx.stroke();
-        this.ctx.restore();
+        stroke.draw(this.ctx);
     }
 
     private calculateCostWithStroke(
-        stroke: NonNullable<typeof this.currentStroke>, 
+        stroke: Stroke, 
         bbox?: { x: number, y: number, w: number, h: number }
     ): number {
         this.drawStrokeToCanvas(stroke);

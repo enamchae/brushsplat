@@ -77,11 +77,9 @@
 
         stopOptimizer();
         optimizer = new BrushOptimizer({
-            canvas,
             ctx,
             referenceBitmap,
             onStatusChange,
-            onError: onErr,
             iterationsPerFrame: 2,
         });
         optimizer.start();
