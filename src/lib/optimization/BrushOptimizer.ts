@@ -1,4 +1,4 @@
-import { Stroke } from "./Stroke";
+import { Stroke, type Point } from "./Stroke";
 import { clamp, randBetween, randBetweenExponential } from "./util";
 
 export type StrokePoint = {
@@ -132,15 +132,13 @@ export class BrushOptimizer {
             // Initialize stroke parameters
             const { r, g, b } = this.sampleReferenceColor(target.index);
             const color = this.randomizeColor(r, g, b);
-            const radius = randBetweenExponential(this.brushRadiusRange[0], this.brushRadiusRange[1]);
             const length = randBetween(this.strokeLengthRange[0], this.strokeLengthRange[1]);
-            const points = this.buildStrokePoints({ x: target.x, y: target.y }, radius, length);
+            const points = this.buildStrokePoints(target.x, target.y, length);
             
             const candidateStroke = new Stroke({
                 p0: points[0],
                 p1: points[1],
                 p2: points[2],
-                radius,
                 color,
                 alpha: randBetween(this.alphaRange[0], this.alphaRange[1])
             });
@@ -171,12 +169,13 @@ export class BrushOptimizer {
         const epsilon = 1;
         const alphaEpsilon = 0.01;
 
-        // Parameters to optimize: p0.x, p0.y, p1.x, p1.y, p2.x, p2.y, radius, r, g, b, alpha
+        // Parameters to optimize: p0.x, p0.y, p1.x, p1.y, p2.x, p2.y, r0, r1, r2, r, g, b, alpha
         const currentParams = new Stroke(this.currentStroke);
         
         // Calculate bounding box for local cost computation
         // Include margin for epsilon and stroke width
-        const margin = this.currentStroke.radius + epsilon + 2;
+        const maxRadius = Math.max(this.currentStroke.p0.radius, this.currentStroke.p1.radius, this.currentStroke.p2.radius);
+        const margin = maxRadius + epsilon + 2;
         const minX = Math.min(currentParams.p0.x, currentParams.p1.x, currentParams.p2.x) - margin;
         const minY = Math.min(currentParams.p0.y, currentParams.p1.y, currentParams.p2.y) - margin;
         const maxX = Math.max(currentParams.p0.x, currentParams.p1.x, currentParams.p2.x) + margin;
@@ -198,41 +197,50 @@ export class BrushOptimizer {
 
         const evaluate = (mod: Partial<typeof currentParams>) => {
             const tempStroke = new Stroke({ ...currentParams, ...mod });
-            tempStroke.radius = clamp(tempStroke.radius, this.brushRadiusRange[0], this.brushRadiusRange[1]);
+            tempStroke.p0.radius = clamp(tempStroke.p0.radius, this.brushRadiusRange[0], this.brushRadiusRange[1]);
+            tempStroke.p1.radius = clamp(tempStroke.p1.radius, this.brushRadiusRange[0], this.brushRadiusRange[1]);
+            tempStroke.p2.radius = clamp(tempStroke.p2.radius, this.brushRadiusRange[0], this.brushRadiusRange[1]);
             return this.calculateCostWithStroke(tempStroke, bbox);
         };
 
         const posEpsilon = epsilon;
 
         const grads = {
-            p0x: (evaluate({ p0: { x: currentParams.p0.x + posEpsilon, y: currentParams.p0.y } }) - localBaseCost) / posEpsilon,
-            p0y: (evaluate({ p0: { x: currentParams.p0.x, y: currentParams.p0.y + posEpsilon } }) - localBaseCost) / posEpsilon,
-            p1x: (evaluate({ p1: { x: currentParams.p1.x + posEpsilon, y: currentParams.p1.y } }) - localBaseCost) / posEpsilon,
-            p1y: (evaluate({ p1: { x: currentParams.p1.x, y: currentParams.p1.y + posEpsilon } }) - localBaseCost) / posEpsilon,
-            p2x: (evaluate({ p2: { x: currentParams.p2.x + posEpsilon, y: currentParams.p2.y } }) - localBaseCost) / posEpsilon,
-            p2y: (evaluate({ p2: { x: currentParams.p2.x, y: currentParams.p2.y + posEpsilon } }) - localBaseCost) / posEpsilon,
-            radius: (evaluate({ radius: currentParams.radius + epsilon }) - localBaseCost) / epsilon,
+            p0x: (evaluate({ p0: { x: currentParams.p0.x + posEpsilon, y: currentParams.p0.y, radius: currentParams.p0.radius } }) - localBaseCost) / posEpsilon,
+            p0y: (evaluate({ p0: { x: currentParams.p0.x, y: currentParams.p0.y + posEpsilon, radius: currentParams.p0.radius } }) - localBaseCost) / posEpsilon,
+            p1x: (evaluate({ p1: { x: currentParams.p1.x + posEpsilon, y: currentParams.p1.y, radius: currentParams.p1.radius } }) - localBaseCost) / posEpsilon,
+            p1y: (evaluate({ p1: { x: currentParams.p1.x, y: currentParams.p1.y + posEpsilon, radius: currentParams.p1.radius } }) - localBaseCost) / posEpsilon,
+            p2x: (evaluate({ p2: { x: currentParams.p2.x + posEpsilon, y: currentParams.p2.y, radius: currentParams.p2.radius } }) - localBaseCost) / posEpsilon,
+            p2y: (evaluate({ p2: { x: currentParams.p2.x, y: currentParams.p2.y + posEpsilon, radius: currentParams.p2.radius } }) - localBaseCost) / posEpsilon,
+            r0: (evaluate({ p0: { ...currentParams.p0, radius: currentParams.p0.radius + epsilon } }) - localBaseCost) / epsilon,
+            r1: (evaluate({ p1: { ...currentParams.p1, radius: currentParams.p1.radius + epsilon } }) - localBaseCost) / epsilon,
+            r2: (evaluate({ p2: { ...currentParams.p2, radius: currentParams.p2.radius + epsilon } }) - localBaseCost) / epsilon,
             r: (evaluate({ color: { ...currentParams.color, r: currentParams.color.r + epsilon } }) - localBaseCost) / epsilon,
             g: (evaluate({ color: { ...currentParams.color, g: currentParams.color.g + epsilon } }) - localBaseCost) / epsilon,
             b: (evaluate({ color: { ...currentParams.color, b: currentParams.color.b + epsilon } }) - localBaseCost) / epsilon,
             alpha: (evaluate({ alpha: currentParams.alpha + alphaEpsilon }) - localBaseCost) / alphaEpsilon
         };
 
-        const posLearningRate = learningRate * this.currentStroke.radius / this.currentStroke.alpha;
+        const avgRadius = (this.currentStroke.p0.radius + this.currentStroke.p1.radius + this.currentStroke.p2.radius) / 3;
+        const posLearningRate = learningRate * avgRadius / this.currentStroke.alpha;
         this.currentStroke.p0.x -= grads.p0x * posLearningRate;
         this.currentStroke.p0.y -= grads.p0y * posLearningRate;
         this.currentStroke.p1.x -= grads.p1x * posLearningRate;
         this.currentStroke.p1.y -= grads.p1y * posLearningRate;
         this.currentStroke.p2.x -= grads.p2x * posLearningRate;
         this.currentStroke.p2.y -= grads.p2y * posLearningRate;
-        this.currentStroke.radius -= grads.radius * radiusLearningRate;
+        this.currentStroke.p0.radius -= grads.r0 * radiusLearningRate;
+        this.currentStroke.p1.radius -= grads.r1 * radiusLearningRate;
+        this.currentStroke.p2.radius -= grads.r2 * radiusLearningRate;
         
         this.currentStroke.color.r -= grads.r * colorLearningRate;
         this.currentStroke.color.g -= grads.g * colorLearningRate;
         this.currentStroke.color.b -= grads.b * colorLearningRate;
         this.currentStroke.alpha -= grads.alpha * alphaLearningRate;
 
-        this.currentStroke.radius = clamp(this.currentStroke.radius, this.brushRadiusRange[0], this.brushRadiusRange[1]);
+        this.currentStroke.p0.radius = clamp(this.currentStroke.p0.radius, this.brushRadiusRange[0], this.brushRadiusRange[1]);
+        this.currentStroke.p1.radius = clamp(this.currentStroke.p1.radius, this.brushRadiusRange[0], this.brushRadiusRange[1]);
+        this.currentStroke.p2.radius = clamp(this.currentStroke.p2.radius, this.brushRadiusRange[0], this.brushRadiusRange[1]);
         this.currentStroke.color.r = clamp(this.currentStroke.color.r, 0, 255);
         this.currentStroke.color.g = clamp(this.currentStroke.color.g, 0, 255);
         this.currentStroke.color.b = clamp(this.currentStroke.color.b, 0, 255);
@@ -251,7 +259,7 @@ export class BrushOptimizer {
             `Cost: ${newGlobalCost.toFixed(0)} · Step: ${this.optimizationSteps}`
         );
 
-        const convergenceThreshold = this.currentStroke.radius * this.convergenceThresholdFactor;
+        const convergenceThreshold = avgRadius * this.convergenceThresholdFactor;
         if (this.optimizationSteps >= this.maxOptimizationSteps || (Math.abs(costChange) < convergenceThreshold && this.optimizationSteps > 2)) {
             this.finalizeStroke();
         }
@@ -339,26 +347,32 @@ export class BrushOptimizer {
         return null;
     }
 
-    private buildStrokePoints(origin: StrokePoint, radius: number, length: number): [StrokePoint, StrokePoint, StrokePoint] {
+    private buildStrokePoints(originX: number, originY: number, length: number): [Point, Point, Point] {
         const angle = Math.random() * Math.PI * 2;
-        const jitter = radius * 0.75;
+        const jitter = this.brushRadiusRange[0] * 0.75;
 
-        const p0 = origin;
+        const p0 = {
+            x: originX, 
+            y: originY, 
+            radius: randBetweenExponential(this.brushRadiusRange[0], this.brushRadiusRange[1]) 
+        };
         const p1 = {
             x: clamp(
-                origin.x + Math.cos(angle) * (length * 0.5) + randBetween(-jitter, jitter),
+                originX + Math.cos(angle) * (length * 0.5) + randBetween(-jitter, jitter),
                 0,
                 this.width,
             ),
             y: clamp(
-                origin.y + Math.sin(angle) * (length * 0.5) + randBetween(-jitter, jitter),
+                originY + Math.sin(angle) * (length * 0.5) + randBetween(-jitter, jitter),
                 0,
                 this.height,
             ),
+            radius: randBetweenExponential(this.brushRadiusRange[0], this.brushRadiusRange[1]),
         };
         const p2 = {
-            x: clamp(origin.x + Math.cos(angle) * length + randBetween(-jitter, jitter), 0, this.width),
-            y: clamp(origin.y + Math.sin(angle) * length + randBetween(-jitter, jitter), 0, this.height),
+            x: clamp(originX + Math.cos(angle) * length + randBetween(-jitter, jitter), 0, this.width),
+            y: clamp(originY + Math.sin(angle) * length + randBetween(-jitter, jitter), 0, this.height),
+            radius: randBetweenExponential(this.brushRadiusRange[0], this.brushRadiusRange[1]),
         };
 
         return [p0, p1, p2];
