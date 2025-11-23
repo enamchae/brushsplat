@@ -80,7 +80,7 @@
             ctx,
             referenceBitmap,
             onStatusChange,
-            iterationsPerFrame: 2,
+            iterationsPerFrame: 3,
         });
         optimizer.start();
     });
