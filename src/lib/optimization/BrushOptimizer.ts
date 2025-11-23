@@ -20,6 +20,10 @@ const clamp = (value: number, min: number, max: number) => Math.min(max, Math.ma
 
 const randBetween = (min: number, max: number) => min + Math.random() * (max - min);
 
+const randBetweenExponential = (min: number, max: number) => {
+    return min * Math.pow(max / min, Math.random());
+};
+
 export class BrushOptimizer {
     private readonly canvas: HTMLCanvasElement;
     private readonly ctx: CanvasRenderingContext2D;
@@ -57,7 +61,7 @@ export class BrushOptimizer {
     private lastCost = 0;
     private optimizationSteps = 0;
     private readonly maxOptimizationSteps = 1_500;
-    private readonly convergenceThreshold = 1_000; // Change in cost threshold
+    private readonly convergenceThresholdFactor = 10; // Cost change threshold per pixel of radius
 
     constructor(options: BrushOptimizerOptions) {
         this.canvas = options.canvas;
@@ -66,7 +70,7 @@ export class BrushOptimizer {
         this.onError = options.onError;
 
         this.iterationsPerFrame = options.iterationsPerFrame ?? 1;
-        this.brushRadiusRange = options.brushRadiusRange ?? [1, 100];
+        this.brushRadiusRange = options.brushRadiusRange ?? [1, 400];
         this.strokeLengthRange = options.strokeLengthRange ?? [16, 200];
         this.colorJitter = options.colorJitter ?? 18;
         this.alphaRange = options.alphaRange ?? [0.8, 1];
@@ -157,7 +161,7 @@ export class BrushOptimizer {
             // Initialize stroke parameters
             const { r, g, b } = this.sampleReferenceColor(target.index);
             const color = this.randomizeColor(r, g, b);
-            const radius = randBetween(this.brushRadiusRange[0], this.brushRadiusRange[1]);
+            const radius = randBetweenExponential(this.brushRadiusRange[0], this.brushRadiusRange[1]);
             const length = randBetween(this.strokeLengthRange[0], this.strokeLengthRange[1]);
             const points = this.buildStrokePoints({ x: target.x, y: target.y }, radius, length);
             
@@ -192,7 +196,7 @@ export class BrushOptimizer {
         const learningRate = 0.000001; // Tunable
         const radiusLearningRate = 0.0002;
         const colorLearningRate = 0.00001;
-        const alphaLearningRate = 0.00002;
+        const alphaLearningRate = 0.000005;
         const epsilon = 3;
         const alphaEpsilon = 0.01;
 
@@ -278,7 +282,8 @@ export class BrushOptimizer {
             `Cost: ${newGlobalCost.toFixed(0)} · Step: ${this.optimizationSteps}`
         );
 
-        if (this.optimizationSteps >= this.maxOptimizationSteps || (Math.abs(costChange) < this.convergenceThreshold && this.optimizationSteps > 5)) {
+        const convergenceThreshold = this.currentStroke.radius * this.convergenceThresholdFactor;
+        if (this.optimizationSteps >= this.maxOptimizationSteps || (Math.abs(costChange) < convergenceThreshold && this.optimizationSteps > 5)) {
             this.finalizeStroke();
         }
     }
