@@ -148,24 +148,40 @@ export class BrushOptimizer {
         // Save background
         this.backgroundData = this.ctx.getImageData(0, 0, this.width, this.height);
 
-        // Initialize stroke parameters
-        const { r, g, b } = this.sampleReferenceColor(target.index);
-        const color = this.randomizeColor(r, g, b);
-        const radius = randBetween(this.brushRadiusRange[0], this.brushRadiusRange[1]);
-        const length = randBetween(this.strokeLengthRange[0], this.strokeLengthRange[1]);
-        const points = this.buildStrokePoints({ x: target.x, y: target.y }, radius, length);
-        
-        this.currentStroke = {
-            p0: points[0],
-            p1: points[1],
-            p2: points[2],
-            radius,
-            color,
-            alpha: randBetween(this.alphaRange[0], this.alphaRange[1])
-        };
+        // Best-of-N strategy
+        const CANDIDATES = 10;
+        let bestStroke = null;
+        let bestCost = Infinity;
 
+        for (let i = 0; i < CANDIDATES; i++) {
+            // Initialize stroke parameters
+            const { r, g, b } = this.sampleReferenceColor(target.index);
+            const color = this.randomizeColor(r, g, b);
+            const radius = randBetween(this.brushRadiusRange[0], this.brushRadiusRange[1]);
+            const length = randBetween(this.strokeLengthRange[0], this.strokeLengthRange[1]);
+            const points = this.buildStrokePoints({ x: target.x, y: target.y }, radius, length);
+            
+            const candidateStroke = {
+                p0: points[0],
+                p1: points[1],
+                p2: points[2],
+                radius,
+                color,
+                alpha: randBetween(this.alphaRange[0], this.alphaRange[1])
+            };
+
+            const cost = this.calculateCostWithStroke(candidateStroke);
+            if (cost < bestCost) {
+                bestCost = cost;
+                bestStroke = candidateStroke;
+            }
+        }
+
+        if (!bestStroke) return false;
+
+        this.currentStroke = bestStroke;
         this.optimizationSteps = 0;
-        this.lastCost = this.calculateCostWithStroke(this.currentStroke);
+        this.lastCost = bestCost;
         
         return true;
     }
