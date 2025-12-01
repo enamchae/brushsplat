@@ -25,6 +25,8 @@ export class BrushOptimizer {
     private totalDifference = 0;
     private nIteration = 0;
 
+    private nBrushstroke = 0;
+
     private running = false;
     private frameHandle: number | null = null;
 
@@ -122,6 +124,8 @@ export class BrushOptimizer {
 
         const target = this.pickTargetPixel();
         if (!target) return false;
+
+        this.nBrushstroke++;
 
         this.backgroundData = this.ctx.getImageData(0, 0, this.width, this.height);
 
@@ -284,7 +288,7 @@ export class BrushOptimizer {
         this.drawStrokeToCanvas(this.currentStroke);
 
         this.onStatusChange?.(
-            `Cost: ${newGlobalCost.toFixed(0)} · Step: ${this.optimizationSteps}`
+            `Brushstroke ${this.nBrushstroke} · Step ${this.optimizationSteps} · Cost ${newGlobalCost.toFixed(0)}`
         );
 
         const convergenceThreshold = avgRadius * this.convergenceThresholdFactor;
