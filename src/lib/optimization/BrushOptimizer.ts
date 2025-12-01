@@ -174,7 +174,7 @@ export class BrushOptimizer {
     private optimizeStroke() {
         if (!this.currentStroke || !this.backgroundData) return;
 
-        const learningRate = 0.00000005; // Tunable
+        const posLearningRateBase = 0.00000001; // Tunable
         const radiusLearningRate = 0.0000005;
         const colorLearningRate = 0.000002;
         const alphaLearningRate = 0.000005;
@@ -205,6 +205,24 @@ export class BrushOptimizer {
         // If bbox is invalid, skip
         if (bbox.w <= 0 || bbox.h <= 0) return;
 
+        // const perturbations: Stroke[] = [];
+        // perturbations.push(new Stroke({ ...currentParams, p0: { ...currentParams.p0, x: currentParams.p0.x + epsilon * currentParams.p0.radius**0.65 } }));
+        // perturbations.push(new Stroke({ ...currentParams, p0: { ...currentParams.p0, y: currentParams.p0.y + epsilon * currentParams.p0.radius**0.65 } }));
+        // perturbations.push(new Stroke({ ...currentParams, p1: { ...currentParams.p1, x: currentParams.p1.x + epsilon * currentParams.p1.radius**0.65 } }));
+        // perturbations.push(new Stroke({ ...currentParams, p1: { ...currentParams.p1, y: currentParams.p1.y + epsilon * currentParams.p1.radius**0.65 } }));
+        // perturbations.push(new Stroke({ ...currentParams, p2: { ...currentParams.p2, x: currentParams.p2.x + epsilon * currentParams.p2.radius**0.65 } }));
+        // perturbations.push(new Stroke({ ...currentParams, p2: { ...currentParams.p2, y: currentParams.p2.y + epsilon * currentParams.p2.radius**0.65 } }));
+        
+        // perturbations.push(new Stroke({ ...currentParams, p0: { ...currentParams.p0, radius: currentParams.p0.radius + epsilon } }));
+        // perturbations.push(new Stroke({ ...currentParams, p1: { ...currentParams.p1, radius: currentParams.p1.radius + epsilon } }));
+        // perturbations.push(new Stroke({ ...currentParams, p2: { ...currentParams.p2, radius: currentParams.p2.radius + epsilon } }));
+        
+        // perturbations.push(new Stroke({ ...currentParams, color: { ...currentParams.color, r: currentParams.color.r + epsilon } }));
+        // perturbations.push(new Stroke({ ...currentParams, color: { ...currentParams.color, g: currentParams.color.g + epsilon } }));
+        // perturbations.push(new Stroke({ ...currentParams, color: { ...currentParams.color, b: currentParams.color.b + epsilon } }));
+        
+        // perturbations.push(new Stroke({ ...currentParams, alpha: currentParams.alpha + alphaEpsilon }));
+
         const localBaseCost = this.calculateCostWithStroke(currentParams, bbox);
 
         const evaluate = (mod: Partial<typeof currentParams>) => {
@@ -232,7 +250,7 @@ export class BrushOptimizer {
         };
 
         const avgRadius = (this.currentStroke.p0.radius + this.currentStroke.p1.radius + this.currentStroke.p2.radius) / 3;
-        const posLearningRate = learningRate * avgRadius / this.currentStroke.alpha;
+        const posLearningRate = posLearningRateBase * avgRadius / this.currentStroke.alpha;
         this.currentStroke.p0.x -= grads.p0x * posLearningRate;
         this.currentStroke.p0.y -= grads.p0y * posLearningRate;
         this.currentStroke.p1.x -= grads.p1x * posLearningRate;
