@@ -1,6 +1,6 @@
 <script lang="ts">
 import { BrushOptimizer } from "$lib/optimization/BrushOptimizer";
-import { ColorPaletteMode } from "$lib/optimization/colorDifference";
+import { ColorPaletteMode, ColorDifferenceMethod } from "$lib/optimization/colorDifference";
 import { onDestroy, onMount, untrack } from "svelte";
 
 let {
@@ -8,6 +8,7 @@ let {
     onErr,
     referenceBitmap,
     colorPaletteMode,
+    colorDifferenceMethod,
     colorPalette,
     reset = $bindable(),
     optimizer = $bindable(),
@@ -16,6 +17,7 @@ let {
     onErr: (text: string) => void;
     referenceBitmap: ImageBitmap | null;
     colorPaletteMode: ColorPaletteMode;
+    colorDifferenceMethod: ColorDifferenceMethod;
     colorPalette: string[];
     reset?: (() => void) | null,
     optimizer?: BrushOptimizer | null,
@@ -86,9 +88,10 @@ $effect(() => {
         referenceBitmap,
         onStatusChange,
         onErr,
-        iterationsPerFrame: 3,
-        colorJitter: 5,
+        iterationsPerFrame: 4,
+        colorJitter: 10,
         colorPaletteMode,
+        colorDifferenceMethod,
         colorPalette,
     });
     untrack(() => optimizer!).start();
@@ -97,6 +100,7 @@ $effect(() => {
 $effect(() => {
     if (optimizer) {
         optimizer.setColorMode(colorPaletteMode, colorPalette);
+        optimizer.setColorDifferenceMethod(colorDifferenceMethod);
     }
 });
 

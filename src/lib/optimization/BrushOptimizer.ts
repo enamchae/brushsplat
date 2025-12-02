@@ -1,4 +1,4 @@
-import { computeDifferenceMap, srgbCartesian, srgbCartesianSq, ColorPaletteMode, ColorDifferenceMethod } from "./colorDifference";
+import { computeDifferenceMap, srgbCartesian, srgbCartesianSq, ColorPaletteMode, ColorDifferenceMethod, cheapLightness } from "./colorDifference";
 import { Stroke, type Point } from "./Stroke";
 import { clamp, randBetween, randBetweenExponential } from "./util";
 
@@ -70,7 +70,7 @@ export class BrushOptimizer {
         this.context = options.ctx;
         this.onStatusChange = options.onStatusChange;
         this.colorPaletteMode = options.colorPaletteMode ?? ColorPaletteMode.Any;
-        this.colorDifferenceMethod = options.colorDifferenceMethod ?? ColorDifferenceMethod.Distance;
+        this.colorDifferenceMethod = options.colorDifferenceMethod ?? ColorDifferenceMethod.RgbDistance;
         this.colorPalette = options.colorPalette ?? [];
 
         this.iterationsPerFrame = options.iterationsPerFrame ?? 1;
@@ -126,6 +126,11 @@ export class BrushOptimizer {
     setColorMode(mode: ColorPaletteMode, palette: string[]) {
         this.colorPaletteMode = mode;
         this.colorPalette = palette;
+    }
+
+    setColorDifferenceMethod(method: ColorDifferenceMethod) {
+        this.colorDifferenceMethod = method;
+        this.recomputeDifferenceMap();
     }
 
     private loop = () => {
@@ -380,7 +385,25 @@ export class BrushOptimizer {
         this.lastSuccessfulStroke = new Stroke(this.currentStroke);
 
         this.currentData = this.context.getImageData(0, 0, this.width, this.height);
-        this.recomputeDifferenceMap();
+
+        const epsilon = 1;
+        const maxRadius = Math.max(this.currentStroke.p0.radius, this.currentStroke.p1.radius, this.currentStroke.p2.radius);
+        const margin = maxRadius + epsilon + 2;
+        const minX = Math.min(this.currentStroke.p0.x, this.currentStroke.p1.x, this.currentStroke.p2.x) - margin;
+        const minY = Math.min(this.currentStroke.p0.y, this.currentStroke.p1.y, this.currentStroke.p2.y) - margin;
+        const maxX = Math.max(this.currentStroke.p0.x, this.currentStroke.p1.x, this.currentStroke.p2.x) + margin;
+        const maxY = Math.max(this.currentStroke.p0.y, this.currentStroke.p1.y, this.currentStroke.p2.y) + margin;
+        
+        const bbox = {
+            x: Math.floor(clamp(minX, 0, this.width)),
+            y: Math.floor(clamp(minY, 0, this.height)),
+            w: 0,
+            h: 0
+        };
+        bbox.w = Math.ceil(clamp(maxX - bbox.x, 0, this.width - bbox.x));
+        bbox.h = Math.ceil(clamp(maxY - bbox.y, 0, this.height - bbox.y));
+
+        this.recomputeDifferenceMap(bbox);
         this.nIteration++;
         
         this.currentStroke = null;
@@ -412,46 +435,19 @@ export class BrushOptimizer {
         const refData = this.referenceData.data;
         const curData = currentPatch.data;
         
-        if (this.colorDifferenceMethod === ColorDifferenceMethod.Contrast) {
-            for (let y = 0; y < bh - 1; y++) {
-                for (let x = 0; x < bw - 1; x++) {
+        if (this.colorDifferenceMethod === ColorDifferenceMethod.LightnessDistance) {
+            for (let y = 0; y < bh; y++) {
+                for (let x = 0; x < bw; x++) {
                     const globalX = bx + x;
                     const globalY = by + y;
                     const globalIdx = (globalY * this.width + globalX) * 4;
                     const localIdx = (y * bw + x) * 4;
 
-                    const refIdxX = globalIdx + 4;
-                    const refIdxY = globalIdx + this.width * 4;
+                    const refL = cheapLightness(refData[globalIdx], refData[globalIdx + 1], refData[globalIdx + 2]);
+                    const curL = cheapLightness(curData[localIdx], curData[localIdx + 1], curData[localIdx + 2]);
 
-                    const refDrX = refData[refIdxX] - refData[globalIdx];
-                    const refDgX = refData[refIdxX + 1] - refData[globalIdx + 1];
-                    const refDbX = refData[refIdxX + 2] - refData[globalIdx + 2];
-
-                    const refDrY = refData[refIdxY] - refData[globalIdx];
-                    const refDgY = refData[refIdxY + 1] - refData[globalIdx + 1];
-                    const refDbY = refData[refIdxY + 2] - refData[globalIdx + 2];
-
-                    const curIdxX = localIdx + 4;
-                    const curIdxY = localIdx + bw * 4;
-
-                    const curDrX = curData[curIdxX] - curData[localIdx];
-                    const curDgX = curData[curIdxX + 1] - curData[localIdx + 1];
-                    const curDbX = curData[curIdxX + 2] - curData[localIdx + 2];
-
-                    const curDrY = curData[curIdxY] - curData[localIdx];
-                    const curDgY = curData[curIdxY + 1] - curData[localIdx + 1];
-                    const curDbY = curData[curIdxY + 2] - curData[localIdx + 2];
-
-                    const dGradRx = refDrX - curDrX;
-                    const dGradGx = refDgX - curDgX;
-                    const dGradBx = refDbX - curDbX;
-
-                    const dGradRy = refDrY - curDrY;
-                    const dGradGy = refDgY - curDgY;
-                    const dGradBy = refDbY - curDbY;
-
-                    cost += (dGradRx * dGradRx + dGradGx * dGradGx + dGradBx * dGradBx) +
-                            (dGradRy * dGradRy + dGradGy * dGradGy + dGradBy * dGradBy);
+                    const dL = refL - curL;
+                    cost += dL * dL;
                 }
             }
         } else {
@@ -652,66 +648,77 @@ export class BrushOptimizer {
         });
     }
 
-    private recomputeDifferenceMap() {
-        if (this.colorDifferenceMethod === ColorDifferenceMethod.Contrast) {
-            let total = 0;
-            const refData = this.referenceData.data;
-            const curData = this.currentData.data;
-            const out = this.differenceMap;
+    private recomputeDifferenceMap(bbox?: { x: number, y: number, w: number, h: number }) {
+        const refData = this.referenceData.data;
+        const curData = this.currentData.data;
+        const out = this.differenceMap;
 
-            out.fill(0);
+        const bx = bbox ? bbox.x : 0;
+        const by = bbox ? bbox.y : 0;
+        const bw = bbox ? bbox.w : this.width;
+        const bh = bbox ? bbox.h : this.height;
 
-            for (let y = 0; y < this.height - 1; y++) {
-                for (let x = 0; x < this.width - 1; x++) {
-                    const i = y * this.width + x;
-                    const base = i * 4;
-
-                    const refIdxX = base + 4;
-                    const refIdxY = base + this.width * 4;
-
-                    const refDrX = refData[refIdxX] - refData[base];
-                    const refDgX = refData[refIdxX + 1] - refData[base + 1];
-                    const refDbX = refData[refIdxX + 2] - refData[base + 2];
-
-                    const refDrY = refData[refIdxY] - refData[base];
-                    const refDgY = refData[refIdxY + 1] - refData[base + 1];
-                    const refDbY = refData[refIdxY + 2] - refData[base + 2];
-
-                    const curIdxX = base + 4;
-                    const curIdxY = base + this.width * 4;
-
-                    const curDrX = curData[curIdxX] - curData[base];
-                    const curDgX = curData[curIdxX + 1] - curData[base + 1];
-                    const curDbX = curData[curIdxX + 2] - curData[base + 2];
-
-                    const curDrY = curData[curIdxY] - curData[base];
-                    const curDgY = curData[curIdxY + 1] - curData[base + 1];
-                    const curDbY = curData[curIdxY + 2] - curData[base + 2];
-
-                    const dGradRx = refDrX - curDrX;
-                    const dGradGx = refDgX - curDgX;
-                    const dGradBx = refDbX - curDbX;
-
-                    const dGradRy = refDrY - curDrY;
-                    const dGradGy = refDgY - curDgY;
-                    const dGradBy = refDbY - curDbY;
-
-                    const diff = (dGradRx * dGradRx + dGradGx * dGradGx + dGradBx * dGradBx) +
-                                 (dGradRy * dGradRy + dGradGy * dGradGy + dGradBy * dGradBy);
-                    
-                    out[i] = diff;
-                    total += diff;
+        if (this.colorDifferenceMethod === ColorDifferenceMethod.LightnessDistance) {
+            if (!bbox) {
+                let total = 0;
+                out.fill(0);
+                for (let y = 0; y < this.height; y++) {
+                    for (let x = 0; x < this.width; x++) {
+                        const i = y * this.width + x;
+                        const diff = this.computeContrastDiffAt(i, refData, curData);
+                        out[i] = diff;
+                        total += diff;
+                    }
+                }
+                this.totalDifference = total;
+            } else {
+                for (let y = by; y < by + bh; y++) {
+                    for (let x = bx; x < bx + bw; x++) {
+                        const i = y * this.width + x;
+                        const oldDiff = out[i];
+                        const newDiff = this.computeContrastDiffAt(i, refData, curData);
+                        out[i] = newDiff;
+                        this.totalDifference = this.totalDifference - oldDiff + newDiff;
+                    }
                 }
             }
-            this.totalDifference = total;
         } else {
-            this.totalDifference = computeDifferenceMap({
-                reference: this.referenceData.data,
-                current: this.currentData.data,
-                out: this.differenceMap,
-                distance: srgbCartesianSq,
-            });
+            if (!bbox) {
+                this.totalDifference = computeDifferenceMap({
+                    reference: this.referenceData.data,
+                    current: this.currentData.data,
+                    out: this.differenceMap,
+                    distance: srgbCartesianSq,
+                });
+            } else {
+                for (let y = by; y < by + bh; y++) {
+                    for (let x = bx; x < bx + bw; x++) {
+                        const i = y * this.width + x;
+                        const base = i * 4;
+                        
+                        const dr = refData[base] - curData[base];
+                        const dg = refData[base + 1] - curData[base + 1];
+                        const db = refData[base + 2] - curData[base + 2];
+                        
+                        const oldDiff = out[i];
+                        const newDiff = srgbCartesianSq(dr, dg, db);
+                        
+                        out[i] = newDiff;
+                        this.totalDifference = this.totalDifference - oldDiff + newDiff;
+                    }
+                }
+            }
         }
+    }
+
+    private computeContrastDiffAt(i: number, refData: Uint8ClampedArray, curData: Uint8ClampedArray): number {
+        const base = i * 4;
+
+        const refL = cheapLightness(refData[base], refData[base + 1], refData[base + 2]);
+        const curL = cheapLightness(curData[base], curData[base + 1], curData[base + 2]);
+
+        const dL = refL - curL;
+        return dL * dL;
     }
 
     private sampleReferenceColor(pixelIndex: number): { r: number; g: number; b: number } {

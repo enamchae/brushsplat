@@ -10,7 +10,7 @@ let err = $state<string | null>(null);
 const randomHex = () => Math.floor(Math.random() * 256).toString(16).padStart(2, "0");
 const randomColor = () => `#${randomHex()}${randomHex()}${randomHex()}`;
 
-let colorDifferenceMethod = $state(ColorDifferenceMethod.Distance);
+let colorDifferenceMethod = $state(ColorDifferenceMethod.RgbDistance);
 let colorPaletteMode = $state(ColorPaletteMode.Any);
 let colorPalette = $state<string[]>(new Array(3).fill(0).map(() => randomColor()));
 
@@ -65,18 +65,18 @@ let image: {
                 <input
                     type="radio"
                     bind:group={colorDifferenceMethod}
-                    value={ColorDifferenceMethod.Distance}
+                    value={ColorDifferenceMethod.RgbDistance}
                 />
-                Distance
+                RGB
             </label>
 
             <label>
                 <input
                     type="radio"
                     bind:group={colorDifferenceMethod}
-                    value={ColorDifferenceMethod.Contrast}
+                    value={ColorDifferenceMethod.LightnessDistance}
                 />
-                Contrast
+                Lightness
             </label>
         </color-difference-method>
 
@@ -134,6 +134,7 @@ let image: {
             onErr={(text) => (err = text)}
             referenceBitmap={image?.bitmap ?? null}
             {colorPaletteMode}
+            {colorDifferenceMethod}
             {colorPalette}
             bind:optimizer
             bind:reset
