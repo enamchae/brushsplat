@@ -82,13 +82,6 @@ export class BrushOptimizer {
         this.width = options.referenceBitmap.width;
         this.height = options.referenceBitmap.height;
 
-        this.context.imageSmoothingEnabled = true;
-        this.context.save();
-        this.context.fillStyle = "#ffffff";
-        this.context.globalAlpha = 1;
-        this.context.fillRect(0, 0, this.width, this.height);
-        this.context.restore();
-
         const referenceCanvas = document.createElement("canvas");
         referenceCanvas.width = this.width;
         referenceCanvas.height = this.height;
@@ -99,6 +92,25 @@ export class BrushOptimizer {
         }
         referenceCtx.drawImage(options.referenceBitmap, 0, 0, this.width, this.height);
         this.referenceData = referenceCtx.getImageData(0, 0, this.width, this.height);
+
+        let totalR = 0, totalG = 0, totalB = 0;
+        const pixelCount = this.width * this.height;
+        for (let i = 0; i < pixelCount; i++) {
+            const base = i * 4;
+            totalR += this.referenceData.data[base];
+            totalG += this.referenceData.data[base + 1];
+            totalB += this.referenceData.data[base + 2];
+        }
+        const avgR = Math.round(totalR / pixelCount);
+        const avgG = Math.round(totalG / pixelCount);
+        const avgB = Math.round(totalB / pixelCount);
+
+        this.context.imageSmoothingEnabled = true;
+        this.context.save();
+        this.context.fillStyle = `rgb(${avgR}, ${avgG}, ${avgB})`;
+        this.context.globalAlpha = 1;
+        this.context.fillRect(0, 0, this.width, this.height);
+        this.context.restore();
 
         this.currentData = this.context.getImageData(0, 0, this.width, this.height);
         this.differenceMap = new Float32Array(this.width * this.height);
@@ -174,8 +186,7 @@ export class BrushOptimizer {
 
         this.backgroundData = this.context.getImageData(0, 0, this.width, this.height);
 
-        // Select the best of N candidates to optimize
-        const N_CANDIDATES = 100;
+        const N_CANDIDATES = 40;
         let bestStroke: Stroke | null = null;
         let bestCost = Infinity;
 
@@ -450,6 +461,23 @@ export class BrushOptimizer {
                     cost += dL * dL;
                 }
             }
+        } else if (this.colorDifferenceMethod === ColorDifferenceMethod.LightnessContrast) {
+            for (let y = 0; y < bh; y++) {
+                for (let x = 0; x < bw; x++) {
+                    const globalX = bx + x;
+                    const globalY = by + y;
+                    
+                    const refGradX = this.computeLightnessGradientX(globalX, globalY, refData);
+                    const refGradY = this.computeLightnessGradientY(globalX, globalY, refData);
+                    
+                    const curGradX = this.computeLightnessGradientXLocal(x, y, bx, by, bw, bh, curData);
+                    const curGradY = this.computeLightnessGradientYLocal(x, y, bx, by, bw, bh, curData);
+                    
+                    const dGradX = refGradX - curGradX;
+                    const dGradY = refGradY - curGradY;
+                    cost += dGradX * dGradX + dGradY * dGradY;
+                }
+            }
         } else {
             for (let y = 0; y < bh; y++) {
                 for (let x = 0; x < bw; x++) {
@@ -682,6 +710,30 @@ export class BrushOptimizer {
                     }
                 }
             }
+        } else if (this.colorDifferenceMethod === ColorDifferenceMethod.LightnessContrast) {
+            if (!bbox) {
+                let total = 0;
+                out.fill(0);
+                for (let y = 0; y < this.height; y++) {
+                    for (let x = 0; x < this.width; x++) {
+                        const i = y * this.width + x;
+                        const diff = this.computeLightnessContrastDiffAt(x, y, refData, curData);
+                        out[i] = diff;
+                        total += diff;
+                    }
+                }
+                this.totalDifference = total;
+            } else {
+                for (let y = by; y < by + bh; y++) {
+                    for (let x = bx; x < bx + bw; x++) {
+                        const i = y * this.width + x;
+                        const oldDiff = out[i];
+                        const newDiff = this.computeLightnessContrastDiffAt(x, y, refData, curData);
+                        out[i] = newDiff;
+                        this.totalDifference = this.totalDifference - oldDiff + newDiff;
+                    }
+                }
+            }
         } else {
             if (!bbox) {
                 this.totalDifference = computeDifferenceMap({
@@ -719,6 +771,60 @@ export class BrushOptimizer {
 
         const dL = refL - curL;
         return dL * dL;
+    }
+
+    private computeLightnessGradientX(x: number, y: number, data: Uint8ClampedArray): number {
+        if (x <= 0 || x >= this.width - 1) return 0;
+        const idx = (y * this.width + x) * 4;
+        const idxPrev = idx - 4;
+        const idxNext = idx + 4;
+        const lPrev = cheapLightness(data[idxPrev], data[idxPrev + 1], data[idxPrev + 2]);
+        const lNext = cheapLightness(data[idxNext], data[idxNext + 1], data[idxNext + 2]);
+        return (lNext - lPrev) / 2;
+    }
+
+    private computeLightnessGradientY(x: number, y: number, data: Uint8ClampedArray): number {
+        if (y <= 0 || y >= this.height - 1) return 0;
+        const idx = (y * this.width + x) * 4;
+        const idxPrev = idx - this.width * 4;
+        const idxNext = idx + this.width * 4;
+        const lPrev = cheapLightness(data[idxPrev], data[idxPrev + 1], data[idxPrev + 2]);
+        const lNext = cheapLightness(data[idxNext], data[idxNext + 1], data[idxNext + 2]);
+        return (lNext - lPrev) / 2;
+    }
+
+    private computeLightnessGradientXLocal(x: number, y: number, bx: number, by: number, bw: number, bh: number, data: Uint8ClampedArray): number {
+        const globalX = bx + x;
+        const globalY = by + y;
+        if (globalX <= 0 || globalX >= this.width - 1 || x <= 0 || x >= bw - 1) return 0;
+        const idx = (y * bw + x) * 4;
+        const idxPrev = idx - 4;
+        const idxNext = idx + 4;
+        const lPrev = cheapLightness(data[idxPrev], data[idxPrev + 1], data[idxPrev + 2]);
+        const lNext = cheapLightness(data[idxNext], data[idxNext + 1], data[idxNext + 2]);
+        return (lNext - lPrev) / 2;
+    }
+
+    private computeLightnessGradientYLocal(x: number, y: number, bx: number, by: number, bw: number, bh: number, data: Uint8ClampedArray): number {
+        const globalX = bx + x;
+        const globalY = by + y;
+        if (globalY <= 0 || globalY >= this.height - 1 || y <= 0 || y >= bh - 1) return 0;
+        const idx = (y * bw + x) * 4;
+        const idxPrev = idx - bw * 4;
+        const idxNext = idx + bw * 4;
+        const lPrev = cheapLightness(data[idxPrev], data[idxPrev + 1], data[idxPrev + 2]);
+        const lNext = cheapLightness(data[idxNext], data[idxNext + 1], data[idxNext + 2]);
+        return (lNext - lPrev) / 2;
+    }
+
+    private computeLightnessContrastDiffAt(x: number, y: number, refData: Uint8ClampedArray, curData: Uint8ClampedArray): number {
+        const refGradX = this.computeLightnessGradientX(x, y, refData);
+        const refGradY = this.computeLightnessGradientY(x, y, refData);
+        const curGradX = this.computeLightnessGradientX(x, y, curData);
+        const curGradY = this.computeLightnessGradientY(x, y, curData);
+        const dGradX = refGradX - curGradX;
+        const dGradY = refGradY - curGradY;
+        return dGradX * dGradX + dGradY * dGradY;
     }
 
     private sampleReferenceColor(pixelIndex: number): { r: number; g: number; b: number } {

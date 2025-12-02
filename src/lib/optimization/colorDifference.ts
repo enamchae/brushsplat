@@ -74,6 +74,7 @@ export const computeCostOfPatch = ({
 export enum ColorDifferenceMethod {
     RgbDistance,
     LightnessDistance,
+    LightnessContrast,
 }
 
 export enum ColorPaletteMode {

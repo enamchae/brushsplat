@@ -78,6 +78,15 @@ let image: {
                 />
                 Lightness
             </label>
+
+            <label>
+                <input
+                    type="radio"
+                    bind:group={colorDifferenceMethod}
+                    value={ColorDifferenceMethod.LightnessContrast}
+                />
+                Lightness contrast
+            </label>
         </color-difference-method>
 
         <color-palette>
