@@ -1,7 +1,8 @@
 <script lang="ts">
 import Canvas from "$lib/components/Canvas.svelte";
 import ImageUpload from "$lib/components/ImageUpload.svelte";
-    import { ColorDifferenceMethod, ColorPaletteMode } from "$lib/optimization/colorDifference";
+import type { BrushOptimizer } from "$lib/optimization/BrushOptimizer";
+import { ColorDifferenceMethod, ColorPaletteMode } from "$lib/optimization/colorDifference";
 
 let status = $state("loading javascript");
 let err = $state<string | null>(null);
@@ -12,6 +13,13 @@ const randomColor = () => `#${randomHex()}${randomHex()}${randomHex()}`;
 let colorDifferenceMethod = $state(ColorDifferenceMethod.Distance);
 let colorPaletteMode = $state(ColorPaletteMode.Any);
 let colorPalette = $state<string[]>(new Array(3).fill(0).map(() => randomColor()));
+
+// $effect(() => {
+//     untrack(() => optimizer)?.setColorMode(colorPaletteMode, colorPalette);
+// });
+
+let optimizer = $state<BrushOptimizer | null>(null);
+let reset = $state<(() => void) | null>(null);
 
 let image: {
     src: string;
@@ -48,7 +56,7 @@ let image: {
                 {/if}
             </image-preview>
 
-            <button>Reset</button>
+            <button onclick={() => reset?.()}>Reset</button>
         </image-upload>
 
         <color-difference-method>
@@ -127,6 +135,8 @@ let image: {
             referenceBitmap={image?.bitmap ?? null}
             {colorPaletteMode}
             {colorPalette}
+            bind:optimizer
+            bind:reset
         />
     </canvas-container>
 </main>

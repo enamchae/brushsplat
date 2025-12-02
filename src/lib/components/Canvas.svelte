@@ -1,104 +1,104 @@
 <script lang="ts">
-    import { BrushOptimizer } from "$lib/optimization/BrushOptimizer";
-    import { ColorPaletteMode } from "$lib/optimization/colorDifference";
-    import { onDestroy, onMount } from "svelte";
+import { BrushOptimizer } from "$lib/optimization/BrushOptimizer";
+import { ColorPaletteMode } from "$lib/optimization/colorDifference";
+import { onDestroy, onMount, untrack } from "svelte";
 
-    const {
+let {
+    onStatusChange,
+    onErr,
+    referenceBitmap,
+    colorPaletteMode,
+    colorPalette,
+    reset = $bindable(),
+    optimizer = $bindable(),
+}: {
+    onStatusChange: (text: string) => void;
+    onErr: (text: string) => void;
+    referenceBitmap: ImageBitmap | null;
+    colorPaletteMode: ColorPaletteMode;
+    colorPalette: string[];
+    reset?: (() => void) | null,
+    optimizer?: BrushOptimizer | null,
+} = $props();
+
+const DEFAULT_CANVAS_SIZE = 800;
+
+let canvas: HTMLCanvasElement;
+let context: CanvasRenderingContext2D | null = null;
+
+let width = $state(DEFAULT_CANVAS_SIZE);
+let height = $state(DEFAULT_CANVAS_SIZE);
+
+const stopOptimizer = () => {
+    if (!optimizer) return;
+    optimizer.destroy();
+    optimizer = null;
+};
+
+reset = () => {
+    if (!context) return;
+    context.save();
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.restore();
+};
+
+onMount(() => {
+    context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) {
+        onErr("can't get 2d context");
+        return;
+    }
+    reset?.();
+});
+
+onDestroy(() => {
+    stopOptimizer();
+});
+
+$effect(() => {
+    if (!canvas || !context) return;
+
+    if (!referenceBitmap) {
+        untrack(stopOptimizer);
+        width = DEFAULT_CANVAS_SIZE;
+        height = DEFAULT_CANVAS_SIZE;
+        canvas.width = DEFAULT_CANVAS_SIZE;
+        canvas.height = DEFAULT_CANVAS_SIZE;
+        reset?.();
+        onStatusChange("waiting for reference image");
+        return;
+    }
+
+    const nextWidth = referenceBitmap.width;
+    const nextHeight = referenceBitmap.height;
+
+    width = nextWidth;
+    height = nextHeight;
+    canvas.width = nextWidth;
+    canvas.height = nextHeight;
+
+    reset?.();
+
+    untrack(stopOptimizer);
+    optimizer = new BrushOptimizer({
+        ctx: context,
+        referenceBitmap,
         onStatusChange,
         onErr,
-        referenceBitmap,
+        iterationsPerFrame: 3,
+        colorJitter: 5,
         colorPaletteMode,
         colorPalette,
-    }: {
-        onStatusChange: (text: string) => void;
-        onErr: (text: string) => void;
-        referenceBitmap: ImageBitmap | null;
-        colorPaletteMode: ColorPaletteMode;
-        colorPalette: string[];
-    } = $props();
-
-    const DEFAULT_CANVAS_SIZE = 800;
-
-    let canvas: HTMLCanvasElement;
-    let context: CanvasRenderingContext2D | null = null;
-    let optimizer: BrushOptimizer | null = null;
-
-    let width = $state(DEFAULT_CANVAS_SIZE);
-    let height = $state(DEFAULT_CANVAS_SIZE);
-
-    const stopOptimizer = () => {
-        if (!optimizer) return;
-        optimizer.destroy();
-        optimizer = null;
-    };
-
-    const resetCanvas = (targetWidth: number, targetHeight: number) => {
-        if (!context) return;
-        context.save();
-        context.setTransform(1, 0, 0, 1, 0, 0);
-        context.globalAlpha = 1;
-        context.clearRect(0, 0, targetWidth, targetHeight);
-        context.fillStyle = "#ffffff";
-        context.fillRect(0, 0, targetWidth, targetHeight);
-        context.restore();
-    };
-
-    onMount(() => {
-        context = canvas.getContext("2d", { willReadFrequently: true });
-        if (!context) {
-            onErr("can't get 2d context");
-            return;
-        }
-        resetCanvas(width, height);
     });
+    untrack(() => optimizer!).start();
+});
 
-    onDestroy(() => {
-        stopOptimizer();
-    });
-
-    $effect(() => {
-        if (!canvas || !context) return;
-
-        if (!referenceBitmap) {
-            stopOptimizer();
-            width = DEFAULT_CANVAS_SIZE;
-            height = DEFAULT_CANVAS_SIZE;
-            canvas.width = DEFAULT_CANVAS_SIZE;
-            canvas.height = DEFAULT_CANVAS_SIZE;
-            resetCanvas(DEFAULT_CANVAS_SIZE, DEFAULT_CANVAS_SIZE);
-            onStatusChange("waiting for reference image");
-            return;
-        }
-
-        const nextWidth = referenceBitmap.width;
-        const nextHeight = referenceBitmap.height;
-
-        width = nextWidth;
-        height = nextHeight;
-        canvas.width = nextWidth;
-        canvas.height = nextHeight;
-
-        resetCanvas(nextWidth, nextHeight);
-
-        stopOptimizer();
-        optimizer = new BrushOptimizer({
-            ctx: context,
-            referenceBitmap,
-            onStatusChange,
-            onErr,
-            iterationsPerFrame: 3,
-            colorJitter: 20,
-            colorPaletteMode,
-            colorPalette,
-        });
-        optimizer.start();
-    });
-
-    $effect(() => {
-        if (optimizer) {
-            optimizer.setColorMode(colorPaletteMode, colorPalette);
-        }
-    });
+$effect(() => {
+    if (optimizer) {
+        optimizer.setColorMode(colorPaletteMode, colorPalette);
+    }
+});
 
     /*
 import brushSrc from "$lib/assets/brush.png";

@@ -1,4 +1,4 @@
-import { computeDifferenceMap, srgbCartesian, srgbCartesianSq, ColorPaletteMode } from "./colorDifference";
+import { computeDifferenceMap, srgbCartesian, srgbCartesianSq, ColorPaletteMode, ColorDifferenceMethod } from "./colorDifference";
 import { Stroke, type Point } from "./Stroke";
 import { clamp, randBetween, randBetweenExponential } from "./util";
 
@@ -28,6 +28,7 @@ export class BrushOptimizer {
     private readonly onStatusChange?: (text: string) => void;
 
     private colorPaletteMode: ColorPaletteMode;
+    private colorDifferenceMethod: ColorDifferenceMethod;
     private colorPalette: string[];
 
     private readonly referenceData: ImageData;
@@ -63,11 +64,13 @@ export class BrushOptimizer {
         onStatusChange?: (text: string) => void;
         onErr?: (text: string) => void;
         colorPaletteMode?: ColorPaletteMode;
+        colorDifferenceMethod?: ColorDifferenceMethod;
         colorPalette?: string[];
     }) {
         this.context = options.ctx;
         this.onStatusChange = options.onStatusChange;
         this.colorPaletteMode = options.colorPaletteMode ?? ColorPaletteMode.Any;
+        this.colorDifferenceMethod = options.colorDifferenceMethod ?? ColorDifferenceMethod.Distance;
         this.colorPalette = options.colorPalette ?? [];
 
         this.iterationsPerFrame = options.iterationsPerFrame ?? 1;
@@ -409,18 +412,62 @@ export class BrushOptimizer {
         const refData = this.referenceData.data;
         const curData = currentPatch.data;
         
-        for (let y = 0; y < bh; y++) {
-            for (let x = 0; x < bw; x++) {
-                const globalX = bx + x;
-                const globalY = by + y;
-                const globalIdx = (globalY * this.width + globalX) * 4;
-                const localIdx = (y * bw + x) * 4;
-                
-                const dr = refData[globalIdx] - curData[localIdx];
-                const dg = refData[globalIdx + 1] - curData[localIdx + 1];
-                const db = refData[globalIdx + 2] - curData[localIdx + 2];
-                
-                cost += srgbCartesianSq(dr, dg, db);
+        if (this.colorDifferenceMethod === ColorDifferenceMethod.Contrast) {
+            for (let y = 0; y < bh - 1; y++) {
+                for (let x = 0; x < bw - 1; x++) {
+                    const globalX = bx + x;
+                    const globalY = by + y;
+                    const globalIdx = (globalY * this.width + globalX) * 4;
+                    const localIdx = (y * bw + x) * 4;
+
+                    const refIdxX = globalIdx + 4;
+                    const refIdxY = globalIdx + this.width * 4;
+
+                    const refDrX = refData[refIdxX] - refData[globalIdx];
+                    const refDgX = refData[refIdxX + 1] - refData[globalIdx + 1];
+                    const refDbX = refData[refIdxX + 2] - refData[globalIdx + 2];
+
+                    const refDrY = refData[refIdxY] - refData[globalIdx];
+                    const refDgY = refData[refIdxY + 1] - refData[globalIdx + 1];
+                    const refDbY = refData[refIdxY + 2] - refData[globalIdx + 2];
+
+                    const curIdxX = localIdx + 4;
+                    const curIdxY = localIdx + bw * 4;
+
+                    const curDrX = curData[curIdxX] - curData[localIdx];
+                    const curDgX = curData[curIdxX + 1] - curData[localIdx + 1];
+                    const curDbX = curData[curIdxX + 2] - curData[localIdx + 2];
+
+                    const curDrY = curData[curIdxY] - curData[localIdx];
+                    const curDgY = curData[curIdxY + 1] - curData[localIdx + 1];
+                    const curDbY = curData[curIdxY + 2] - curData[localIdx + 2];
+
+                    const dGradRx = refDrX - curDrX;
+                    const dGradGx = refDgX - curDgX;
+                    const dGradBx = refDbX - curDbX;
+
+                    const dGradRy = refDrY - curDrY;
+                    const dGradGy = refDgY - curDgY;
+                    const dGradBy = refDbY - curDbY;
+
+                    cost += (dGradRx * dGradRx + dGradGx * dGradGx + dGradBx * dGradBx) +
+                            (dGradRy * dGradRy + dGradGy * dGradGy + dGradBy * dGradBy);
+                }
+            }
+        } else {
+            for (let y = 0; y < bh; y++) {
+                for (let x = 0; x < bw; x++) {
+                    const globalX = bx + x;
+                    const globalY = by + y;
+                    const globalIdx = (globalY * this.width + globalX) * 4;
+                    const localIdx = (y * bw + x) * 4;
+                    
+                    const dr = refData[globalIdx] - curData[localIdx];
+                    const dg = refData[globalIdx + 1] - curData[localIdx + 1];
+                    const db = refData[globalIdx + 2] - curData[localIdx + 2];
+                    
+                    cost += srgbCartesianSq(dr, dg, db);
+                }
             }
         }
         return cost;
@@ -606,13 +653,65 @@ export class BrushOptimizer {
     }
 
     private recomputeDifferenceMap() {
+        if (this.colorDifferenceMethod === ColorDifferenceMethod.Contrast) {
+            let total = 0;
+            const refData = this.referenceData.data;
+            const curData = this.currentData.data;
+            const out = this.differenceMap;
 
-        this.totalDifference = computeDifferenceMap({
-            reference: this.referenceData.data,
-            current: this.currentData.data,
-            out: this.differenceMap,
-            distance: srgbCartesianSq,
-        });
+            out.fill(0);
+
+            for (let y = 0; y < this.height - 1; y++) {
+                for (let x = 0; x < this.width - 1; x++) {
+                    const i = y * this.width + x;
+                    const base = i * 4;
+
+                    const refIdxX = base + 4;
+                    const refIdxY = base + this.width * 4;
+
+                    const refDrX = refData[refIdxX] - refData[base];
+                    const refDgX = refData[refIdxX + 1] - refData[base + 1];
+                    const refDbX = refData[refIdxX + 2] - refData[base + 2];
+
+                    const refDrY = refData[refIdxY] - refData[base];
+                    const refDgY = refData[refIdxY + 1] - refData[base + 1];
+                    const refDbY = refData[refIdxY + 2] - refData[base + 2];
+
+                    const curIdxX = base + 4;
+                    const curIdxY = base + this.width * 4;
+
+                    const curDrX = curData[curIdxX] - curData[base];
+                    const curDgX = curData[curIdxX + 1] - curData[base + 1];
+                    const curDbX = curData[curIdxX + 2] - curData[base + 2];
+
+                    const curDrY = curData[curIdxY] - curData[base];
+                    const curDgY = curData[curIdxY + 1] - curData[base + 1];
+                    const curDbY = curData[curIdxY + 2] - curData[base + 2];
+
+                    const dGradRx = refDrX - curDrX;
+                    const dGradGx = refDgX - curDgX;
+                    const dGradBx = refDbX - curDbX;
+
+                    const dGradRy = refDrY - curDrY;
+                    const dGradGy = refDgY - curDgY;
+                    const dGradBy = refDbY - curDbY;
+
+                    const diff = (dGradRx * dGradRx + dGradGx * dGradGx + dGradBx * dGradBx) +
+                                 (dGradRy * dGradRy + dGradGy * dGradGy + dGradBy * dGradBy);
+                    
+                    out[i] = diff;
+                    total += diff;
+                }
+            }
+            this.totalDifference = total;
+        } else {
+            this.totalDifference = computeDifferenceMap({
+                reference: this.referenceData.data,
+                current: this.currentData.data,
+                out: this.differenceMap,
+                distance: srgbCartesianSq,
+            });
+        }
     }
 
     private sampleReferenceColor(pixelIndex: number): { r: number; g: number; b: number } {
