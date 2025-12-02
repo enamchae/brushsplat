@@ -23,7 +23,7 @@ let image: {
     <control-panel>
         <status-panel>
             <h3>Status</h3>
-            {status}
+            <status-text>{status}</status-text>
         </status-panel>
 
         <image-upload>
@@ -47,6 +47,8 @@ let image: {
                     <img src={image.src} alt="uploaded file" />
                 {/if}
             </image-preview>
+
+            <button>Reset</button>
         </image-upload>
 
         <color-difference-method>
@@ -132,6 +134,7 @@ main {
     height: 100vh;
     display: grid;
     grid-template-columns: 1fr 1.5fr;
+    align-items: stretch;
     place-items: center;
     padding: 1rem;
     gap: 1rem;
@@ -142,9 +145,18 @@ control-panel {
     flex-direction: column;
 }
 
+image-preview {
+    display: block;
+    background: oklch(0.9 0 0);
+}
+
+image-preview,
 image-preview > img {
     width: 6rem;
     height: 6rem;
+}
+
+img {
     object-fit: contain;
 }
 
@@ -156,6 +168,11 @@ colors-list {
         opacity: 0.3;
         pointer-events: none;
     }
+}
+
+status-text {
+    display: block;
+    width: 40ch;
 }
 
 h3 {
