@@ -68,4 +68,10 @@ export const computeCostOfPatch = ({
     }
 
     return cost;
+};
+
+
+export enum ColorDifferenceMethod {
+    Distance,
+    Contrast,
 }

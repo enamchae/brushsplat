@@ -7,7 +7,7 @@ export type StrokePoint = {
     y: number;
 };
 export class BrushOptimizer {
-    private readonly ctx: CanvasRenderingContext2D;
+    private readonly context: CanvasRenderingContext2D;
     private readonly width: number;
     private readonly height: number;
 
@@ -36,7 +36,9 @@ export class BrushOptimizer {
     private lastCost = 0;
     private optimizationSteps = 0;
     private readonly maxOptimizationSteps = 1_000;
-    private readonly convergenceThresholdFactor = 30; // Cost change threshold per pixel of radius
+    private readonly convergenceThresholdFactor = 30; // cost change threshold per pixel of radius
+    private nHatchesRemaining = 0;
+
 
     constructor(options: {
         ctx: CanvasRenderingContext2D;
@@ -48,7 +50,7 @@ export class BrushOptimizer {
         strokeLengthRange?: [number, number];
         onStatusChange?: (text: string) => void;
     }) {
-        this.ctx = options.ctx;
+        this.context = options.ctx;
         this.onStatusChange = options.onStatusChange;
 
         this.iterationsPerFrame = options.iterationsPerFrame ?? 1;
@@ -60,12 +62,12 @@ export class BrushOptimizer {
         this.width = options.referenceBitmap.width;
         this.height = options.referenceBitmap.height;
 
-        this.ctx.imageSmoothingEnabled = true;
-        this.ctx.save();
-        this.ctx.fillStyle = "#ffffff";
-        this.ctx.globalAlpha = 1;
-        this.ctx.fillRect(0, 0, this.width, this.height);
-        this.ctx.restore();
+        this.context.imageSmoothingEnabled = true;
+        this.context.save();
+        this.context.fillStyle = "#ffffff";
+        this.context.globalAlpha = 1;
+        this.context.fillRect(0, 0, this.width, this.height);
+        this.context.restore();
 
         const referenceCanvas = document.createElement("canvas");
         referenceCanvas.width = this.width;
@@ -77,7 +79,7 @@ export class BrushOptimizer {
         referenceCtx.drawImage(options.referenceBitmap, 0, 0, this.width, this.height);
         this.referenceData = referenceCtx.getImageData(0, 0, this.width, this.height);
 
-        this.currentData = this.ctx.getImageData(0, 0, this.width, this.height);
+        this.currentData = this.context.getImageData(0, 0, this.width, this.height);
         this.differenceMap = new Float32Array(this.width * this.height);
         this.recomputeDifferenceMap();
     }
@@ -122,12 +124,24 @@ export class BrushOptimizer {
     private startNewStroke(): boolean {
         if (this.totalDifference <= 1e-3) return false;
 
+        if (this.nHatchesRemaining > 0 && this.lastSuccessfulStroke) {
+            this.backgroundData = this.context.getImageData(0, 0, this.width, this.height);
+            const candidateStroke = this.generateParallelStroke(this.lastSuccessfulStroke);
+
+            
+            this.currentStroke = candidateStroke;
+            this.lastCost = this.calculateCostWithStroke(candidateStroke);
+            this.nHatchesRemaining--;
+            return true;
+        }
+
         const target = this.pickTargetPixel();
+
         if (!target) return false;
 
         this.nBrushstroke++;
 
-        this.backgroundData = this.ctx.getImageData(0, 0, this.width, this.height);
+        this.backgroundData = this.context.getImageData(0, 0, this.width, this.height);
 
         // Select the best of N candidates to optimize
         const N_CANDIDATES = 100;
@@ -157,6 +171,9 @@ export class BrushOptimizer {
                     color,
                     alpha: randBetween(this.alphaRange[0], this.alphaRange[1])
                 });
+
+
+
             }
 
             const cost = this.calculateCostWithStroke(candidateStroke);
@@ -172,8 +189,14 @@ export class BrushOptimizer {
         this.optimizationSteps = 0;
         this.lastCost = bestCost;
         
+        // Randomly decide to start a hatching sequence
+        if (Math.random() < 0.3) {
+            this.nHatchesRemaining = Math.floor(randBetween(2, 5));
+        }
+
         return true;
     }
+
 
     private optimizeStroke() {
         if (!this.currentStroke || !this.backgroundData) return;
@@ -206,7 +229,6 @@ export class BrushOptimizer {
         bbox.w = Math.ceil(clamp(maxX - bbox.x, 0, this.width - bbox.x));
         bbox.h = Math.ceil(clamp(maxY - bbox.y, 0, this.height - bbox.y));
 
-        // If bbox is invalid, skip
         if (bbox.w <= 0 || bbox.h <= 0) return;
 
         // const perturbations: Stroke[] = [];
@@ -301,8 +323,8 @@ export class BrushOptimizer {
         if (!this.currentStroke || !this.backgroundData) return;
 
         if (this.lastCost > this.totalDifference) {
-            // The stroke made it worse, discard it
-            this.ctx.putImageData(this.backgroundData, 0, 0);
+            // the stroke made it worse, discard it
+            this.context.putImageData(this.backgroundData, 0, 0);
             this.currentStroke = null;
             this.backgroundData = null;
             return;
@@ -310,10 +332,9 @@ export class BrushOptimizer {
         
         this.drawStrokeToCanvas(this.currentStroke);
         
-        // Store successful stroke for next iteration
         this.lastSuccessfulStroke = new Stroke(this.currentStroke);
 
-        this.currentData = this.ctx.getImageData(0, 0, this.width, this.height);
+        this.currentData = this.context.getImageData(0, 0, this.width, this.height);
         this.recomputeDifferenceMap();
         this.nIteration++;
         
@@ -324,9 +345,9 @@ export class BrushOptimizer {
     private drawStrokeToCanvas(stroke: Stroke) {
         if (!this.backgroundData) return;
         
-        this.ctx.putImageData(this.backgroundData, 0, 0);
+        this.context.putImageData(this.backgroundData, 0, 0);
         
-        stroke.draw(this.ctx);
+        stroke.draw(this.context);
     }
 
     private calculateCostWithStroke(
@@ -340,7 +361,7 @@ export class BrushOptimizer {
         const bw = bbox ? bbox.w : this.width;
         const bh = bbox ? bbox.h : this.height;
 
-        const currentPatch = this.ctx.getImageData(bx, by, bw, bh);
+        const currentPatch = this.context.getImageData(bx, by, bw, bh);
         
         let cost = 0;
         const refData = this.referenceData.data;
@@ -437,14 +458,14 @@ export class BrushOptimizer {
             },
             alpha: clamp(stroke.alpha + randBetween(-alphaJitter, alphaJitter), this.alphaRange[0], this.alphaRange[1])
         });
+
+
     }
 
 
 
     private generateConnectedStroke(refStroke: Stroke): Stroke {
-        // Pick either start or end of the reference stroke
-        const pickStart = Math.random() < 0.5;
-        const basePoint = pickStart ? refStroke.p0 : refStroke.p2;
+        const basePoint = Math.random() < 0.5 ? refStroke.p0 : refStroke.p2;
         
         const posJitter = 5;
         const radiusJitter = 2;
@@ -454,11 +475,9 @@ export class BrushOptimizer {
         const startX = clamp(basePoint.x + randBetween(-posJitter, posJitter), 0, this.width);
         const startY = clamp(basePoint.y + randBetween(-posJitter, posJitter), 0, this.height);
         
-        // Inherit radius with jitter
         const baseRadius = basePoint.radius;
         const newRadius = clamp(baseRadius + randBetween(-radiusJitter, radiusJitter), this.brushRadiusRange[0], this.brushRadiusRange[1]);
 
-        // Generate other points based on angle and length
         const angle = Math.random() * Math.PI * 2;
         const length = randBetweenExponential(this.strokeLengthRange[0], this.strokeLengthRange[1]);
         const controlJitter = this.brushRadiusRange[0] * 0.75;
@@ -497,7 +516,55 @@ export class BrushOptimizer {
         });
     }
 
+    private generateParallelStroke(refStroke: Stroke): Stroke {
+        const spacing = 3;
+        
+        const dx = refStroke.p2.x - refStroke.p0.x;
+        const dy = refStroke.p2.y - refStroke.p0.y;
+        const len = Math.sqrt(dx * dx + dy * dy);
+        
+        let nx = 0, ny = 0;
+        if (len > 0) {
+            nx = -dy / len;
+            ny = dx / len;
+        } else {
+            nx = 1; ny = 0;
+        }
+
+        const avgRadius = (refStroke.p0.radius + refStroke.p1.radius + refStroke.p2.radius) / 3;
+
+        const offset = spacing + randBetween(-avgRadius * 2, avgRadius * 2);
+        
+        const offsetX = nx * offset;
+        const offsetY = ny * offset;
+
+        const p0 = {
+            x: clamp(refStroke.p0.x + offsetX, 0, this.width),
+            y: clamp(refStroke.p0.y + offsetY, 0, this.height),
+            radius: refStroke.p0.radius,
+        };
+        const p1 = {
+            x: clamp(refStroke.p1.x + offsetX, 0, this.width),
+            y: clamp(refStroke.p1.y + offsetY, 0, this.height),
+            radius: refStroke.p1.radius,
+        };
+        const p2 = {
+            x: clamp(refStroke.p2.x + offsetX, 0, this.width),
+            y: clamp(refStroke.p2.y + offsetY, 0, this.height),
+            radius: refStroke.p2.radius,
+        };
+
+        return new Stroke({
+            p0,
+            p1,
+            p2,
+            color: refStroke.color,
+            alpha: refStroke.alpha
+        });
+    }
+
     private recomputeDifferenceMap() {
+
         this.totalDifference = computeDifferenceMap({
             reference: this.referenceData.data,
             current: this.currentData.data,
@@ -507,6 +574,7 @@ export class BrushOptimizer {
     }
 
     private sampleReferenceColor(pixelIndex: number): { r: number; g: number; b: number } {
+
         const base = pixelIndex * 4;
         const data = this.referenceData.data;
         return {

@@ -1,40 +1,41 @@
 <script lang="ts">
-    import Canvas from "$lib/components/Canvas.svelte";
-    import ImageUpload from "$lib/components/ImageUpload.svelte";
-    import { untrack } from "svelte";
+import Canvas from "$lib/components/Canvas.svelte";
+import ImageUpload from "$lib/components/ImageUpload.svelte";
 
-    let status = $state("");
-    let err = $state<string | null>(null);
+let status = $state("loading javascript");
+let err = $state<string | null>(null);
 
-    let image: {
-        src: string;
-        bitmap: ImageBitmap;
-    } | null = $state(null);
+let image: {
+    src: string;
+    bitmap: ImageBitmap;
+} | null = $state(null);
 </script>
 
 <main>
-    {status}
+    <control-panel>
+        {status}
 
-    <image-upload>
-        <ImageUpload
-            onImageChange={async (file) => {
-                if (image !== null) {
-                    URL.revokeObjectURL(image.src);
-                }
+        <image-upload>
+            <ImageUpload
+                onImageChange={async (file) => {
+                    if (image !== null) {
+                        URL.revokeObjectURL(image.src);
+                    }
 
-                image = {
-                    src: URL.createObjectURL(file),
-                    bitmap: await createImageBitmap(file),
-                };
-            }}
-        />
+                    image = {
+                        src: URL.createObjectURL(file),
+                        bitmap: await createImageBitmap(file),
+                    };
+                }}
+            />
 
-        <image-preview>
-            {#if image !== null}
-                <img src={image.src} alt="uploaded file" />
-            {/if}
-        </image-preview>
-    </image-upload>
+            <image-preview>
+                {#if image !== null}
+                    <img src={image.src} alt="uploaded file" />
+                {/if}
+            </image-preview>
+        </image-upload>
+    </control-panel>
 
     <canvas-container>
         <Canvas
@@ -46,16 +47,23 @@
 </main>
 
 <style lang="scss">
-    main {
-        display: flex;
-        flex-direction: column;
-        padding: 1rem;
-        gap: 1rem;
-    }
+main {
+    height: 100vh;
+    display: grid;
+    grid-template-columns: 1fr 1.5fr;
+    place-items: center;
+    padding: 1rem;
+    gap: 1rem;
+}
 
-    image-preview > img {
-        width: 6rem;
-        height: 6rem;
-        object-fit: contain;
-    }
+control-panel {
+    display: flex;
+    flex-direction: column;
+}
+
+image-preview > img {
+    width: 6rem;
+    height: 6rem;
+    object-fit: contain;
+}
 </style>
