@@ -1,21 +1,26 @@
 <script lang="ts">
     import { BrushOptimizer } from "$lib/optimization/BrushOptimizer";
+    import { ColorPaletteMode } from "$lib/optimization/colorDifference";
     import { onDestroy, onMount } from "svelte";
 
     const {
         onStatusChange,
         onErr,
         referenceBitmap,
+        colorPaletteMode,
+        colorPalette,
     }: {
         onStatusChange: (text: string) => void;
         onErr: (text: string) => void;
         referenceBitmap: ImageBitmap | null;
+        colorPaletteMode: ColorPaletteMode;
+        colorPalette: string[];
     } = $props();
 
     const DEFAULT_CANVAS_SIZE = 800;
 
     let canvas: HTMLCanvasElement;
-    let ctx: CanvasRenderingContext2D | null = null;
+    let context: CanvasRenderingContext2D | null = null;
     let optimizer: BrushOptimizer | null = null;
 
     let width = $state(DEFAULT_CANVAS_SIZE);
@@ -28,19 +33,19 @@
     };
 
     const resetCanvas = (targetWidth: number, targetHeight: number) => {
-        if (!ctx) return;
-        ctx.save();
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.globalAlpha = 1;
-        ctx.clearRect(0, 0, targetWidth, targetHeight);
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, targetWidth, targetHeight);
-        ctx.restore();
+        if (!context) return;
+        context.save();
+        context.setTransform(1, 0, 0, 1, 0, 0);
+        context.globalAlpha = 1;
+        context.clearRect(0, 0, targetWidth, targetHeight);
+        context.fillStyle = "#ffffff";
+        context.fillRect(0, 0, targetWidth, targetHeight);
+        context.restore();
     };
 
     onMount(() => {
-        ctx = canvas.getContext("2d", { willReadFrequently: true });
-        if (!ctx) {
+        context = canvas.getContext("2d", { willReadFrequently: true });
+        if (!context) {
             onErr("can't get 2d context");
             return;
         }
@@ -52,7 +57,7 @@
     });
 
     $effect(() => {
-        if (!canvas || !ctx) return;
+        if (!canvas || !context) return;
 
         if (!referenceBitmap) {
             stopOptimizer();
@@ -77,12 +82,22 @@
 
         stopOptimizer();
         optimizer = new BrushOptimizer({
-            ctx,
+            ctx: context,
             referenceBitmap,
             onStatusChange,
+            onErr,
             iterationsPerFrame: 3,
+            colorJitter: 20,
+            colorPaletteMode,
+            colorPalette,
         });
         optimizer.start();
+    });
+
+    $effect(() => {
+        if (optimizer) {
+            optimizer.setColorMode(colorPaletteMode, colorPalette);
+        }
     });
 
     /*

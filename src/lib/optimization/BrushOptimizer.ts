@@ -1,4 +1,4 @@
-import { computeDifferenceMap, srgbCartesian, srgbCartesianSq } from "./colorDifference";
+import { computeDifferenceMap, srgbCartesian, srgbCartesianSq, ColorPaletteMode } from "./colorDifference";
 import { Stroke, type Point } from "./Stroke";
 import { clamp, randBetween, randBetweenExponential } from "./util";
 
@@ -6,6 +6,15 @@ export type StrokePoint = {
     x: number;
     y: number;
 };
+
+const hexToRgb = (hex: string) => {
+    return {
+        r: parseInt(hex.slice(1, 3), 16),
+        g: parseInt(hex.slice(3, 5), 16),
+        b: parseInt(hex.slice(5, 7), 16),
+    };
+};
+
 export class BrushOptimizer {
     private readonly context: CanvasRenderingContext2D;
     private readonly width: number;
@@ -17,6 +26,9 @@ export class BrushOptimizer {
     private readonly colorJitter: number;
     private readonly alphaRange: [number, number];
     private readonly onStatusChange?: (text: string) => void;
+
+    private colorPaletteMode: ColorPaletteMode;
+    private colorPalette: string[];
 
     private readonly referenceData: ImageData;
 
@@ -49,9 +61,14 @@ export class BrushOptimizer {
         alphaRange?: [number, number];
         strokeLengthRange?: [number, number];
         onStatusChange?: (text: string) => void;
+        onErr?: (text: string) => void;
+        colorPaletteMode?: ColorPaletteMode;
+        colorPalette?: string[];
     }) {
         this.context = options.ctx;
         this.onStatusChange = options.onStatusChange;
+        this.colorPaletteMode = options.colorPaletteMode ?? ColorPaletteMode.Any;
+        this.colorPalette = options.colorPalette ?? [];
 
         this.iterationsPerFrame = options.iterationsPerFrame ?? 1;
         this.brushRadiusRange = options.brushRadiusRange ?? [1, 400];
@@ -74,6 +91,7 @@ export class BrushOptimizer {
         referenceCanvas.height = this.height;
         const referenceCtx = referenceCanvas.getContext("2d");
         if (!referenceCtx) {
+            options.onErr?.("Unable to create reference canvas context");
             throw new Error("Unable to create reference canvas context");
         }
         referenceCtx.drawImage(options.referenceBitmap, 0, 0, this.width, this.height);
@@ -100,6 +118,11 @@ export class BrushOptimizer {
 
     destroy() {
         this.stop();
+    }
+
+    setColorMode(mode: ColorPaletteMode, palette: string[]) {
+        this.colorPaletteMode = mode;
+        this.colorPalette = palette;
     }
 
     private loop = () => {
@@ -159,9 +182,25 @@ export class BrushOptimizer {
                     candidateStroke = this.generateConnectedStroke(this.lastSuccessfulStroke);
                 }
             } else {
-                // Initialize stroke parameters
-                const { r, g, b } = this.sampleReferenceColor(target.index);
-                const color = this.randomizeColor(r, g, b);
+                let r, g, b;
+                
+                if (this.colorPaletteMode === ColorPaletteMode.Specified && this.colorPalette.length > 0) {
+                    const randomColor = this.colorPalette[Math.floor(Math.random() * this.colorPalette.length)];
+                    const rgb = hexToRgb(randomColor);
+                    r = rgb.r + randBetween(-this.colorJitter, this.colorJitter);
+                    g = rgb.g + randBetween(-this.colorJitter, this.colorJitter);
+                    b = rgb.b + randBetween(-this.colorJitter, this.colorJitter);
+                } else {
+                    const sampled = this.sampleReferenceColor(target.index);
+                    r = sampled.r;
+                    g = sampled.g;
+                    b = sampled.b;
+                }
+
+                const color = this.colorPaletteMode === ColorPaletteMode.Specified 
+                    ? { r, g, b }
+                    : this.randomizeColor(r, g, b);
+
                 const points = this.buildStrokePoints(target.x, target.y);
                 
                 candidateStroke = new Stroke({
@@ -287,9 +326,12 @@ export class BrushOptimizer {
         this.currentStroke.p1.radius -= grads.r1 * radiusLearningRate;
         this.currentStroke.p2.radius -= grads.r2 * radiusLearningRate;
         
-        this.currentStroke.color.r -= grads.r * colorLearningRate;
-        this.currentStroke.color.g -= grads.g * colorLearningRate;
-        this.currentStroke.color.b -= grads.b * colorLearningRate;
+        if (this.colorPaletteMode !== ColorPaletteMode.Specified) {
+            this.currentStroke.color.r -= grads.r * colorLearningRate;
+            this.currentStroke.color.g -= grads.g * colorLearningRate;
+            this.currentStroke.color.b -= grads.b * colorLearningRate;
+        }
+
         this.currentStroke.alpha -= grads.alpha * alphaLearningRate;
 
         this.currentStroke.p0.radius = clamp(this.currentStroke.p0.radius, this.brushRadiusRange[0], this.brushRadiusRange[1]);

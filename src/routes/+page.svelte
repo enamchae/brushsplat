@@ -125,6 +125,8 @@ let image: {
             onStatusChange={(text) => (status = text)}
             onErr={(text) => (err = text)}
             referenceBitmap={image?.bitmap ?? null}
+            {colorPaletteMode}
+            {colorPalette}
         />
     </canvas-container>
 </main>
@@ -138,6 +140,14 @@ main {
     place-items: center;
     padding: 1rem;
     gap: 1rem;
+
+    background: repeating-linear-gradient(
+        45deg,
+        oklch(0 0 0 / 0) 0,
+        oklch(0 0 0 / 0) 1rem,
+        oklch(0.9 0.05 190 / 0.125) 1rem,
+        oklch(0.9 0.05 190 / 0.125) 2rem,
+    );
 }
 
 control-panel {
