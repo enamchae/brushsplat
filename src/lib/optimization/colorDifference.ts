@@ -75,3 +75,8 @@ export enum ColorDifferenceMethod {
     Distance,
     Contrast,
 }
+
+export enum ColorPaletteMode {
+    Any,
+    Specified,
+}

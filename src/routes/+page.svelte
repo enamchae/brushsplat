@@ -1,9 +1,17 @@
 <script lang="ts">
 import Canvas from "$lib/components/Canvas.svelte";
 import ImageUpload from "$lib/components/ImageUpload.svelte";
+    import { ColorDifferenceMethod, ColorPaletteMode } from "$lib/optimization/colorDifference";
 
 let status = $state("loading javascript");
 let err = $state<string | null>(null);
+
+const randomHex = () => Math.floor(Math.random() * 256).toString(16).padStart(2, "0");
+const randomColor = () => `#${randomHex()}${randomHex()}${randomHex()}`;
+
+let colorDifferenceMethod = $state(ColorDifferenceMethod.Distance);
+let colorPaletteMode = $state(ColorPaletteMode.Any);
+let colorPalette = $state<string[]>(new Array(3).fill(0).map(() => randomColor()));
 
 let image: {
     src: string;
@@ -13,9 +21,14 @@ let image: {
 
 <main>
     <control-panel>
-        {status}
+        <status-panel>
+            <h3>Status</h3>
+            {status}
+        </status-panel>
 
         <image-upload>
+            <h3>Image upload</h3>
+
             <ImageUpload
                 onImageChange={async (file) => {
                     if (image !== null) {
@@ -35,6 +48,74 @@ let image: {
                 {/if}
             </image-preview>
         </image-upload>
+
+        <color-difference-method>
+            <h3>Color difference method</h3>
+            <label>
+                <input
+                    type="radio"
+                    bind:group={colorDifferenceMethod}
+                    value={ColorDifferenceMethod.Distance}
+                />
+                Distance
+            </label>
+
+            <label>
+                <input
+                    type="radio"
+                    bind:group={colorDifferenceMethod}
+                    value={ColorDifferenceMethod.Contrast}
+                />
+                Contrast
+            </label>
+        </color-difference-method>
+
+        <color-palette>
+            <h3>Color palette</h3>
+
+            <div>
+                <label>
+                    <input
+                        type="radio"
+                        bind:group={colorPaletteMode}
+                        value={ColorPaletteMode.Any}
+                    />
+                    Any colors
+                </label>
+
+                <label>
+                    <input
+                        type="radio"
+                        bind:group={colorPaletteMode}
+                        value={ColorPaletteMode.Specified}
+                    />
+                    Specified colors
+                </label>
+            </div>
+
+            <colors-list class:disabled={colorPaletteMode === ColorPaletteMode.Any}>
+                {#each colorPalette as color, i}
+                    <color-option>
+                        <label>
+                            <input
+                                type="color"
+                                bind:value={colorPalette[i]}
+                            />
+
+                            {color}
+                        </label>
+
+                        <button onclick={() => {
+                            colorPalette.splice(i, 1);
+                        }}>&#x00d7;</button>
+                    </color-option>
+                {/each}
+
+                <button onclick={() => {
+                    colorPalette.push(randomColor());
+                }}>+</button>
+            </colors-list>
+        </color-palette>
     </control-panel>
 
     <canvas-container>
@@ -65,5 +146,19 @@ image-preview > img {
     width: 6rem;
     height: 6rem;
     object-fit: contain;
+}
+
+colors-list {
+    display: flex;
+    flex-direction: column;
+
+    &.disabled {
+        opacity: 0.3;
+        pointer-events: none;
+    }
+}
+
+h3 {
+    margin-bottom: 0.25rem;
 }
 </style>
