@@ -21,6 +21,28 @@ let colorPalette = $state<string[]>(new Array(3).fill(0).map(() => randomColor()
 let optimizer = $state<BrushOptimizer | null>(null);
 let reset = $state<(() => void) | null>(null);
 
+const resizeImage = async (file: File, maxDimension: number): Promise<ImageBitmap> => {
+    const tempBitmap = await createImageBitmap(file);
+    const { width, height } = tempBitmap;
+    
+    if (width <= maxDimension && height <= maxDimension) {
+        return tempBitmap;
+    }
+    
+    const scale = maxDimension / Math.max(width, height);
+    const newWidth = Math.round(width * scale);
+    const newHeight = Math.round(height * scale);
+    
+    const resized = await createImageBitmap(tempBitmap, {
+        resizeWidth: newWidth,
+        resizeHeight: newHeight,
+        resizeQuality: 'high'
+    });
+    
+    tempBitmap.close();
+    return resized;
+};
+
 let image: {
     src: string;
     bitmap: ImageBitmap;
@@ -45,7 +67,7 @@ let image: {
 
                     image = {
                         src: URL.createObjectURL(file),
-                        bitmap: await createImageBitmap(file),
+                        bitmap: await resizeImage(file, 600),
                     };
                 }}
             />

@@ -23,7 +23,7 @@ let {
     optimizer?: BrushOptimizer | null,
 } = $props();
 
-const DEFAULT_CANVAS_SIZE = 800;
+const DEFAULT_CANVAS_SIZE = 600;
 
 let canvas: HTMLCanvasElement;
 let context: CanvasRenderingContext2D | null = null;
@@ -88,7 +88,7 @@ $effect(() => {
         referenceBitmap,
         onStatusChange,
         onErr,
-        iterationsPerFrame: 4,
+        iterationsPerFrame: 8,
         colorJitter: 10,
         colorPaletteMode,
         colorDifferenceMethod,
